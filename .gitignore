@@ -1,0 +1,8 @@
+# Ignore database files
+db/
+
+# Ignore model checkpoints
+checkpoint/
+
+#Ignore file paths
+Index/paths.csv
