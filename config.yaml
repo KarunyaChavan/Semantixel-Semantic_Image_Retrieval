@@ -1,0 +1,22 @@
+batch_size: 8
+
+clip:
+  HF_transformers_clip: openai/clip-vit-base-patch32
+  mobileclip_checkpoint: mobileclip_s0
+  provider: HF_transformers
+
+deep_scan: true
+
+exclude_directories: []
+include_directories:
+- C:\Users\Karunya\Pictures\Screenshots
+ocr_provider: doctr
+scan_method: default
+text_embed:
+  HF_transformers_embeddings: sentence-transformers/all-MiniLM-L6-v2
+  embedding_gguf: ''
+  ollama_embeddings: ''
+  openai_api_key: ''
+  openai_endpoint: ''
+  openai_model: ''
+  provider: HF_transformers
