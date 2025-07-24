@@ -1,7 +1,7 @@
 # 📸 SemantiXel — Semantic Image Retrieval
 
 <p align="center">
-  <img src="assets/icon.png" alt="SemantiXel Logo" width="200px" height="300px"/>
+  <img src="UI/Semantixel WebUI/assets/icon.png" alt="SemantiXel Logo" width="200px" height="300px"/>
 </p>
 
 
