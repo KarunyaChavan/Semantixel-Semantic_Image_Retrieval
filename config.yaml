@@ -1,12 +1,9 @@
 batch_size: 8
-
 clip:
   HF_transformers_clip: openai/clip-vit-base-patch32
   mobileclip_checkpoint: mobileclip_s0
   provider: HF_transformers
-
 deep_scan: true
-
 exclude_directories: []
 include_directories:
 - C:\Users\Karunya\Pictures\Screenshots

@@ -55,7 +55,7 @@ class SemantixelSettings:
         self.root = ttk.Window(themename=theme_dict[theme])
         self.root.title("Semantixel Settings")
         self.root.minsize(840, 860)
-        self.root.iconphoto(False, tk.PhotoImage(file="assets/icon.png"))
+        self.root.iconphoto(False, tk.PhotoImage(file="UI/Semantixel WebUI/assets/icon.png"))
 
         self.create_main_frame()
         self.create_directory_options()

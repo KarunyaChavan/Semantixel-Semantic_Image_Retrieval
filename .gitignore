@@ -6,3 +6,6 @@ checkpoint/
 
 #Ignore file paths
 Index/paths.csv
+
+#Ignoring Jupyter Lab files
+.ipynb_checkpoints/
