@@ -98,7 +98,7 @@ button:hover {
     width: 250px;
     padding: 15px 20px;
     border-radius: 30px;
-    border: none;
+    border: 1px solid var(--border-color);
     color: var(--input-text-color);
     appearance: none;
     -webkit-appearance: none;
@@ -224,7 +224,7 @@ button:hover {
 #threshold-value {
     font-weight: bold;
     color: #007bff;
-    width: 40px; /* Fixed width for the value display */
+    width: 40px;
     text-align: right;
 }
 
@@ -264,7 +264,7 @@ button:hover {
     --footer-link-hover-color: #0056b3;
 }
 
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
     :root {
         --background-color: #181818;
         --text-color: #e0e0e0;

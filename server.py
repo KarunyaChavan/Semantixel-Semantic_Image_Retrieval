@@ -193,6 +193,10 @@ def serve_index():
     """
     return send_from_directory(app.static_folder, "index.html")
 
+@app.route("/assets/<path:filename>")
+def serve_assets(filename):
+    return send_from_directory(os.path.join(app.static_folder, "assets"), filename)
+
 
 @app.route("/images/<path:filename>")
 def serve_image(filename):
