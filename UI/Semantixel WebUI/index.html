@@ -40,13 +40,13 @@
         <div class="results" id="results"></div>
     </div>
     <div class="enlarged-img" id="enlarged-img-container"></div>
-    <footer style="margin-top: 20px; text-align: center;">
+    <!-- <footer style="margin-top: 20px; text-align: center;">
         <p> <i class="fab fa-github"></i>
             <a href="https://github.com/KarunyaChavan/Semantixel-Semantic_Image_Retrieval">
                 Semantixel
             </a>
         </p>
-    </footer>
+    </footer> -->
 
     <script>
         function changePlaceholder() {
@@ -143,9 +143,13 @@
         });
 
         // Update threshold value display
-        document.getElementById('threshold').addEventListener('input', function() {
-            document.getElementById('threshold-value').textContent = this.value;
-        });
+        // ...existing code...
+document.getElementById('threshold').addEventListener('input', function() {
+    document.getElementById('threshold-value').textContent = this.value;
+    const percent = (this.value - this.min) / (this.max - this.min) * 100;
+    this.style.background = `linear-gradient(to right, #007bff 0%, #007bff ${percent}%, var(--input-background-color) ${percent}%, var(--input-background-color) 100%)`;
+});
+// ...existing code...
     </script>
 </body>
 

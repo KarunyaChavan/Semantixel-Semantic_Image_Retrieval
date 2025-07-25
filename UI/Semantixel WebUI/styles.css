@@ -11,7 +11,7 @@ body {
     background-color: var(--container-background-color);
     padding: 40px;
     border-radius: 20px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .search-bar,
@@ -27,12 +27,13 @@ body {
 button {
     padding: 15px 20px;
     border-radius: 30px;
-    border: none;
+    border: 1px solid var(--border-color);
     flex: 1;
     margin-right: 20px;
     background-color: var(--input-background-color);
     color: var(--input-text-color);
     font-size: 16px;
+    
     transition: all 0.3s ease;
 }
 
@@ -161,7 +162,7 @@ button:hover {
     padding: 15px;
     margin: 0 25px;
     border-radius: 10px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .search-option label {
@@ -176,7 +177,7 @@ button:hover {
     background-color: var(--container-background-color);
     padding: 15px;
     border-radius: 10px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .search-option label {
@@ -192,15 +193,17 @@ button:hover {
     width: 280px; /* Fixed width for the container */
 }
 
+/* Add this to your CSS */
 #threshold {
     width: 200px;
     -webkit-appearance: none;
     appearance: none;
     height: 8px;
-    background: var(--input-background-color);
+    background: linear-gradient(to right, #007bff 0%, #007bff 0%, var(--input-background-color) 0%, var(--input-background-color) 100%);
     outline: none;
     border-radius: 4px;
     margin-right: 10px;
+    transition: background 0.3s;
 }
 
 #threshold::-webkit-slider-thumb {
