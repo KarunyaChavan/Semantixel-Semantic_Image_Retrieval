@@ -1,11 +1,22 @@
-# Ignore database files
+#Ignore database files
 db/
 
-# Ignore model checkpoints
+#Ignore model checkpoints
 checkpoint/
 
 #Ignore file paths
 Index/paths.csv
 
+#Ignoring VS Code workspace files
+.vscode/
+
 #Ignoring Jupyter Lab files
 .ipynb_checkpoints/
+
+# Face Database
+face_db/*.pkl
+
+# Face Data
+face_data/*.jpg
+face_data/*.jpeg
+face_data/*.png
