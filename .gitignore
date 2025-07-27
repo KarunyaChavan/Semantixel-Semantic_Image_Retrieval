@@ -1,7 +1,7 @@
-# Ignore database files
+#Ignore database files
 db/
 
-# Ignore model checkpoints
+#Ignore model checkpoints
 checkpoint/
 
 #Ignore file paths
@@ -13,8 +13,6 @@ Index/paths.csv
 #Ignoring Jupyter Lab files
 .ipynb_checkpoints/
 
-# Face Recognition Data - keep directories but ignore contents
-face_db/*
-!face_db/.gitkeep
-face_data/*
-!face_data/.gitkeep
+#Face Recognition Data - keep directories but ignore contents
+face_db/
+face_data/
