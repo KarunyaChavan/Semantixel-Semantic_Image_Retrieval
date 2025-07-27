@@ -9,6 +9,8 @@ from Index.create_db import (
 
 import os
 import requests
+from face_recognition.face_search import search_face_by_name
+from face_recognition.integrated_search import integrated_face_semantic_search
 from io import BytesIO
 
 image_collection, text_collection = create_vectordb("db")
@@ -182,6 +184,20 @@ def ebmed_text_route():
     paths, distances = search_embed_text(query, text_collection, top_k, threshold)
     return jsonify(paths)
 
+
+@app.route("/face_search", methods=["POST"])
+def face_search_route():
+    query = request.json.get("query", "")
+    results = search_face_by_name(query)
+    return jsonify(results)
+
+@app.route("/integrated_search", methods=["POST"])
+def integrated_search_route():
+    query = request.json.get("query", "")
+    threshold = float(request.json.get("threshold", 0.3))
+    top_k = int(request.json.get("top_k", 10))
+    results = integrated_face_semantic_search(query, image_collection, top_k, threshold)
+    return jsonify(results)
 
 @app.route("/")
 def serve_index():

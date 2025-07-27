@@ -16,3 +16,6 @@ Flask
 flask-cors
 ttkbootstrap
 darkdetect
+opencv-python
+mtcnn-opencv
+deepface
