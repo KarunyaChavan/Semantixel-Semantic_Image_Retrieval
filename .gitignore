@@ -7,5 +7,16 @@ checkpoint/
 #Ignore file paths
 Index/paths.csv
 
+#Ignoring VS Code workspace files
+.vscode/
+
 #Ignoring Jupyter Lab files
 .ipynb_checkpoints/
+
+#Ignoring Face Database
+face_db/*.pkl
+
+#Ignoring Face Data
+face_data/*.jpg
+face_data/*.png
+face_data/*.jpeg
