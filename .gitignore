@@ -13,10 +13,8 @@ Index/paths.csv
 #Ignoring Jupyter Lab files
 .ipynb_checkpoints/
 
-# Face Database
-face_db/*.pkl
-
-# Face Data
-face_data/*.jpg
-face_data/*.jpeg
-face_data/*.png
+# Face Recognition Data - keep directories but ignore contents
+face_db/*
+!face_db/.gitkeep
+face_data/*
+!face_data/.gitkeep
