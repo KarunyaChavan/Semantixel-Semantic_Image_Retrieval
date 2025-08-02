@@ -15,7 +15,7 @@ SemantiXel is a lightweight and modern web-based interface for performing **sema
 ## 🏛️ Architecture
 
 <p align="center">
-  <img src="UI/Semantixel WebUI/assets/architecture.png" alt="SemantiXel Logo" width="200px" height="300px"/>
+  <img src="UI/Semantixel WebUI/assets/architecture.png" alt="SemantiXel Logo" width="400px" height="500px"/>
 </p>
 
 ---
