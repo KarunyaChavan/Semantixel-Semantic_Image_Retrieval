@@ -1,0 +1,12 @@
+{
+    "ID": "5df1fb74-df5f-4506-aca6-8590de57cc34",
+    "ActionKeyword": "sr",
+    "Name": "Semantixel",
+    "Description": "Powerful image search tool offers content-based, text, and visual similarity search system-wide.",
+    "Author": "KarunyaChavan",
+    "Version": "0.1.0",
+    "Language": "python",
+    "Website": "https://github.com/KarunyaChavan/Semantixel-Semantic_Image_Retrieval.git",
+    "IcoPath": "icon.png",
+    "ExecuteFileName": "main.py"
+}

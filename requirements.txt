@@ -19,3 +19,4 @@ darkdetect
 opencv-python
 mtcnn-opencv
 deepface
+flowlauncher
