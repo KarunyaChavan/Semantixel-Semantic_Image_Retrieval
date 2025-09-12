@@ -8,10 +8,23 @@ from Index.create_db import (
 )
 
 import os
+import warnings
+import logging
 import requests
 from face_recognition.face_search import search_face_by_name
 from face_recognition.integrated_search import integrated_face_semantic_search
 from io import BytesIO
+
+# Comprehensive warning suppression
+warnings.filterwarnings("ignore")
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY"] = "False"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+
+# Suppress specific ChromaDB logging
+logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICAL)
+logging.getLogger("chromadb.segment.impl.vector.local_persistent_hnsw").setLevel(logging.CRITICAL)
 
 image_collection, text_collection = create_vectordb("db")
 
@@ -32,8 +45,13 @@ def parse_image(image_path, top_k=5, threshold=0):
                       or the image_path itself if it's a local file path.
     """
     if image_path.startswith("http://") or image_path.startswith("https://"):
-        response = requests.get(image_path)
-        return BytesIO(response.content)
+        try:
+            response = requests.get(image_path, timeout=10)
+            response.raise_for_status()
+            return BytesIO(response.content)
+        except requests.exceptions.RequestException as e:
+            print(f"Warning: Could not fetch image from URL {image_path}: {e}")
+            raise ValueError(f"Failed to fetch image from URL: {e}")
     else:
         image_path = image_path.strip('"').strip("'")
         return image_path

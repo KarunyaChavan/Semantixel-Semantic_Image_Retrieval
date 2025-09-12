@@ -30,16 +30,70 @@
                 <label for="threshold">Threshold:</label>
                 <input type="range" id="threshold" min="0" max="1" step="0.01" value="0">
                 <span id="threshold-value">0</span>
+                <button class="help-btn" onclick="showHelp('threshold')" title="Learn about threshold">
+                    <i class="fas fa-question-circle"></i>
+                </button>
             </div>
             <div class="search-option">
                 <label for="top-k">Top K:</label>
                 <input type="number" id="top-k" min="1" max="99" value="10">
+                <button class="help-btn" onclick="showHelp('topk')" title="Learn about Top K">
+                    <i class="fas fa-question-circle"></i>
+                </button>
+            </div>
+            <div class="search-option">
+                <button class="help-btn-main" onclick="showHelp('modes')" title="Learn about search modes">
+                    <i class="fas fa-info-circle"></i> Search Guide
+                </button>
             </div>
         </div>
         <div class="loader" id="loader"></div>
         <div class="results" id="results"></div>
     </div>
     <div class="enlarged-img" id="enlarged-img-container"></div>
+    
+    <!-- Image Path Display Panel -->
+    <div class="image-path-panel" id="image-path-panel" style="display: none;">
+        <div class="path-header">
+            <h3><i class="fas fa-image"></i> Selected Image</h3>
+            <button class="close-btn" onclick="closePathPanel()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="path-content">
+            <div class="path-display">
+                <label>File Path:</label>
+                <div class="path-text" id="selected-image-path"></div>
+                <button class="copy-btn" onclick="copyImagePath()" title="Copy path to clipboard">
+                    <i class="fas fa-copy"></i> Copy
+                </button>
+            </div>
+            <div class="path-actions">
+                <button class="action-btn" onclick="openImageLocation()" title="Open file location">
+                    <i class="fas fa-folder-open"></i> Open Location
+                </button>
+                <button class="action-btn" onclick="openImageInNewTab()" title="View full size">
+                    <i class="fas fa-external-link-alt"></i> View Full Size
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Help Modal -->
+    <div class="modal" id="help-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title"><i class="fas fa-question-circle"></i> Help</h2>
+                <button class="close-btn" onclick="closeHelpModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <!-- Content will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+    
     <!-- <footer style="margin-top: 20px; text-align: center;">
         <p> <i class="fab fa-github"></i>
             <a href="https://github.com/KarunyaChavan/Semantixel-Semantic_Image_Retrieval">
@@ -56,23 +110,36 @@
             var thresholdValue = document.getElementById('threshold-value');
             var topK = document.getElementById('top-k');
 
+            // Clear the previous input when switching modes
+            input.value = '';
+
+            // Also clear previous results and enlarged image
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('enlarged-img-container').innerHTML = '';
+            
+            // Close image path panel if open
+            document.getElementById('image-path-panel').style.display = 'none';
 
             if (select.value == 'clip_text') {
                 input.placeholder = 'Enter image caption or description';
-                threshold.value = 0.5;
-                thresholdValue.textContent = 0.5;
+                threshold.value = 0.15;
+                thresholdValue.textContent = 0.15;
                 topK.value = 5;
             } else if (select.value == 'clip_image') {
                 input.placeholder = 'Enter image full path';
-                threshold.value = 0.7;
-                thresholdValue.textContent = 0.7;
+                threshold.value = 0.25;
+                thresholdValue.textContent = 0.25;
                 topK.value = 10;
             } else if (select.value == 'ebmed_text') {
                 input.placeholder = 'Enter text to search for images with similar text';
-                threshold.value = 0.2;
-                thresholdValue.textContent = 0.2;
+                threshold.value = 0.1;
+                thresholdValue.textContent = 0.1;
                 topK.value = 3;
             }
+            
+            // Update the threshold slider background
+            const percent = (threshold.value - threshold.min) / (threshold.max - threshold.min) * 100;
+            threshold.style.background = `linear-gradient(to right, #007bff 0%, #007bff ${percent}%, var(--input-background-color) ${percent}%, var(--input-background-color) 100%)`;
         }
 
         function performSearch() {
@@ -103,9 +170,11 @@
                     data.forEach(path => {
                         const img = document.createElement('img');
                         img.src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(path)}`;
+                        img.dataset.originalPath = path; // Store original path
                         img.onclick = () => {
                             displayEnlargedImage(img.src);
                             highlightSelectedImage(img);
+                            showImagePath(path);
                         };
                         resultsDiv.appendChild(img);
                     });
@@ -142,14 +211,265 @@
             }
         });
 
+        // Global variable to store current image path
+        let currentImagePath = '';
+        let currentImageSrc = '';
+
+        // Image Path Panel Functions
+        function showImagePath(path) {
+            currentImagePath = path;
+            currentImageSrc = `http://${window.location.hostname}:${window.location.port || 8080}/images/${encodeURIComponent(path)}`;
+            
+            document.getElementById('selected-image-path').textContent = path;
+            document.getElementById('image-path-panel').style.display = 'block';
+            
+            // Smooth scroll to panel
+            document.getElementById('image-path-panel').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function closePathPanel() {
+            document.getElementById('image-path-panel').style.display = 'none';
+        }
+
+        async function copyImagePath() {
+            try {
+                await navigator.clipboard.writeText(currentImagePath);
+                
+                // Visual feedback
+                const copyBtn = document.querySelector('.copy-btn');
+                const originalText = copyBtn.innerHTML;
+                copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                copyBtn.style.backgroundColor = '#28a745';
+                
+                setTimeout(() => {
+                    copyBtn.innerHTML = originalText;
+                    copyBtn.style.backgroundColor = '';
+                }, 2000);
+                
+            } catch (err) {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = currentImagePath;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                
+                alert('Path copied to clipboard!');
+            }
+        }
+
+        function openImageLocation() {
+            // For Windows, we'll show the user how to open the location manually
+            const path = currentImagePath.replace(/\//g, '\\');
+            const folder = path.substring(0, path.lastIndexOf('\\'));
+            
+            // Create a helpful dialog with instructions
+            const message = `File Location:\n${folder}\n\nTo open this location:\n` +
+                           `1. Press Win + R\n` +
+                           `2. Type: explorer "${folder}"\n` +
+                           `3. Press Enter\n\n` +
+                           `Or copy the path below and paste it in File Explorer address bar.`;
+            
+            // Copy folder path to clipboard
+            navigator.clipboard.writeText(folder).then(() => {
+                alert(message + '\n\n✓ Folder path copied to clipboard!');
+            }).catch(() => {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = folder;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                
+                alert(message + '\n\n✓ Folder path copied to clipboard!');
+            });
+        }
+
+        function openImageInNewTab() {
+            window.open(currentImageSrc, '_blank');
+        }
+
+        // Help System Functions
+        function showHelp(type) {
+            const modal = document.getElementById('help-modal');
+            const title = document.getElementById('modal-title');
+            const body = document.getElementById('modal-body');
+            
+            let content = '';
+            
+            if (type === 'threshold') {
+                title.innerHTML = '<i class="fas fa-sliders-h"></i> Threshold Help';
+                content = `
+                    <div class="help-section">
+                        <h3>What is Threshold?</h3>
+                        <p>Threshold controls the <strong>minimum similarity score</strong> required for images to appear in your results.</p>
+                        
+                        <div class="threshold-guide">
+                            <div class="threshold-item">
+                                <span class="threshold-value">0.0</span>
+                                <div class="threshold-desc">
+                                    <strong>Show All Results</strong><br>
+                                    Returns all images, ranked by similarity.
+                                </div>
+                            </div>
+                            <div class="threshold-item">
+                                <span class="threshold-value">0.1</span>
+                                <div class="threshold-desc">
+                                    <strong>Broad Match</strong><br>
+                                    Filters out only the least relevant results.
+                                </div>
+                            </div>
+                            <div class="threshold-item">
+                                <span class="threshold-value">0.2</span>
+                                <div class="threshold-desc">
+                                    <strong>Good Match</strong><br>
+                                    Shows reasonably similar images.
+                                </div>
+                            </div>
+                            <div class="threshold-item">
+                                <span class="threshold-value">0.3+</span>
+                                <div class="threshold-desc">
+                                    <strong>High Similarity</strong><br>
+                                    Very selective - may return few or no results.
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="tip-box">
+                            <i class="fas fa-lightbulb"></i>
+                            <strong>Tip:</strong> CLIP similarity scores are typically low (0.1-0.3). Start with 0.0-0.1 for broad results, use 0.2+ for more precision.
+                        </div>
+                    </div>
+                `;
+            } else if (type === 'topk') {
+                title.innerHTML = '<i class="fas fa-list-ol"></i> Top K Help';
+                content = `
+                    <div class="help-section">
+                        <h3>What is Top K?</h3>
+                        <p>Top K determines the <strong>maximum number of images</strong> to return in your search results.</p>
+                        
+                        <div class="topk-guide">
+                            <div class="topk-item">
+                                <span class="topk-value">3-5</span>
+                                <span class="topk-desc">Quick overview of best matches</span>
+                            </div>
+                            <div class="topk-item">
+                                <span class="topk-value">10-15</span>
+                                <span class="topk-desc">Good balance for most searches</span>
+                            </div>
+                            <div class="topk-item">
+                                <span class="topk-value">20+</span>
+                                <span class="topk-desc">Comprehensive results (slower)</span>
+                            </div>
+                        </div>
+                        
+                        <div class="tip-box">
+                            <i class="fas fa-lightbulb"></i>
+                            <strong>Note:</strong> Actual results may be fewer if threshold filters out low-similarity images.
+                        </div>
+                    </div>
+                `;
+            } else if (type === 'modes') {
+                title.innerHTML = '<i class="fas fa-search"></i> Search Modes Guide';
+                content = `
+                    <div class="help-section">
+                        <h3>Search Modes Explained</h3>
+                        
+                        <div class="mode-card">
+                            <div class="mode-header">
+                                <i class="fas fa-camera"></i>
+                                <h4>Caption Search</h4>
+                                <span class="mode-tag">AI-Powered</span>
+                            </div>
+                            <p><strong>Find images by describing what's in them.</strong></p>
+                            <div class="examples">
+                                <div class="example-label">Examples:</div>
+                                <span class="example">"a dog playing in the park"</span>
+                                <span class="example">"sunset over mountains"</span>
+                                <span class="example">"person using laptop"</span>
+                            </div>
+                            <div class="recommended-settings">
+                                <strong>Recommended:</strong> Threshold 0.15, Top K 5-10
+                            </div>
+                        </div>
+                        
+                        <div class="mode-card">
+                            <div class="mode-header">
+                                <i class="fas fa-font"></i>
+                                <h4>Text Content Search</h4>
+                                <span class="mode-tag">OCR-Based</span>
+                            </div>
+                            <p><strong>Find images containing specific text.</strong></p>
+                            <div class="examples">
+                                <div class="example-label">Examples:</div>
+                                <span class="example">"Microsoft"</span>
+                                <span class="example">"error message"</span>
+                                <span class="example">"login"</span>
+                            </div>
+                            <div class="recommended-settings">
+                                <strong>Recommended:</strong> Threshold 0.1, Top K 3-5
+                            </div>
+                        </div>
+                        
+                        <div class="mode-card">
+                            <div class="mode-header">
+                                <i class="fas fa-images"></i>
+                                <h4>Similar Images Search</h4>
+                                <span class="mode-tag">Visual</span>
+                            </div>
+                            <p><strong>Find images that look similar to a reference image.</strong></p>
+                            <div class="examples">
+                                <div class="example-label">Input:</div>
+                                <span class="example">Full image path or URL</span>
+                            </div>
+                            <div class="recommended-settings">
+                                <strong>Recommended:</strong> Threshold 0.25, Top K 10-15
+                            </div>
+                        </div>
+                        
+                        <div class="quick-tips">
+                            <h4><i class="fas fa-rocket"></i> Quick Tips</h4>
+                            <ul>
+                                <li>Start with <strong>Caption Search</strong> for natural language queries</li>
+                                <li>Use <strong>Text Content</strong> to find screenshots with specific text</li>
+                                <li>Try <strong>Similar Images</strong> to find duplicates or variations</li>
+                                <li>Lower threshold = More results (but less precise)</li>
+                                <li>Higher threshold = Fewer results (but more accurate)</li>
+                            </ul>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            body.innerHTML = content;
+            modal.style.display = 'flex';
+            
+            // Smooth scroll to top of modal
+            setTimeout(() => {
+                modal.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 100);
+        }
+        
+        function closeHelpModal() {
+            document.getElementById('help-modal').style.display = 'none';
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('help-modal');
+            if (event.target === modal) {
+                closeHelpModal();
+            }
+        }
+
         // Update threshold value display
-        // ...existing code...
-document.getElementById('threshold').addEventListener('input', function() {
-    document.getElementById('threshold-value').textContent = this.value;
-    const percent = (this.value - this.min) / (this.max - this.min) * 100;
-    this.style.background = `linear-gradient(to right, #007bff 0%, #007bff ${percent}%, var(--input-background-color) ${percent}%, var(--input-background-color) 100%)`;
-});
-// ...existing code...
+        document.getElementById('threshold').addEventListener('input', function() {
+            document.getElementById('threshold-value').textContent = this.value;
+            const percent = (this.value - this.min) / (this.max - this.min) * 100;
+            this.style.background = `linear-gradient(to right, #007bff 0%, #007bff ${percent}%, var(--input-background-color) ${percent}%, var(--input-background-color) 100%)`;
+        });
     </script>
 </body>
 

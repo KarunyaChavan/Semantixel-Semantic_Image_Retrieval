@@ -8,6 +8,10 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
+# Disable ChromaDB telemetry to avoid telemetry errors
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY"] = "False"
+
 # Load the configuration file
 with open("config.yaml", "r") as f:
     config = yaml.safe_load(f)
@@ -137,18 +141,31 @@ def clean_index(image_collection, text_collection, verbose=False):
         text_collection (Collection): The text collection in the database.
     """
     paths, averages = read_from_csv("paths.csv")
+    all_image_ids = image_collection.get()["ids"]
+    all_text_ids = text_collection.get()["ids"]
+    
     for i, id in tqdm(
-        enumerate(image_collection.get()["ids"]),
-        total=len(image_collection.get()["ids"]),
+        enumerate(all_image_ids),
+        total=len(all_image_ids),
         desc="Cleaning up database",
     ):
         if id not in paths:
-            if verbose:
-                print(f"deleting: {id} from image_collection")
-            image_collection.delete(ids=[id])
-            try:
+            # Check if ID exists in image collection before deletion
+            if id in all_image_ids:
+                if verbose:
+                    print(f"deleting: {id} from image_collection")
+                try:
+                    image_collection.delete(ids=[id])
+                except Exception as e:
+                    if verbose:
+                        print(f"Warning: Could not delete {id} from image_collection: {e}")
+            
+            # Check if ID exists in text collection before deletion
+            if id in all_text_ids:
                 if verbose:
                     print(f"deleting: {id} from text_collection")
-                text_collection.delete(ids=[id])
-            except:
-                pass
+                try:
+                    text_collection.delete(ids=[id])
+                except Exception as e:
+                    if verbose:
+                        print(f"Warning: Could not delete {id} from text_collection: {e}")
