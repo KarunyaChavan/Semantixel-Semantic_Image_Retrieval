@@ -5,7 +5,7 @@ This document outlines the high-level architecture of Semantixel and how the mai
 ## High-level workflow
 
 <p align="center">
-  <img src="UI/Semantixel WebUI/assets/architecture.png" alt="SemantiXel Logo" width="600px" height="800px"/>
+  <img src="../UI/Semantixel WebUI/assets/architecture.png" alt="SemantiXel Logo" width="600px" height="800px"/>
 </p>
 
 1. Data ingestion: images and optional metadata are discovered and scanned by the `Index/` utilities (see `scan.py`, `scan_default.py`).
