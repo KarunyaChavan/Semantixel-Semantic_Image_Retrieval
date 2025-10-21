@@ -4,6 +4,9 @@ db/
 #Ignore model checkpoints
 checkpoint/
 
+#Ignore vscode settings
+.vscode/
+
 #Ignore file paths
 Index/paths.csv
 
