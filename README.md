@@ -1,14 +1,23 @@
 # 📸 SemantiXel — Semantic Image Retrieval
 
-<p align="center">
-  <img src="UI/Semantixel WebUI/assets/icon.png" alt="SemantiXel Logo" width="200px" height="300px"/>
-</p>
-
-
+---
 
 SemantiXel is a lightweight and modern web-based interface for performing **semantic search on image datasets** using CLIP and sentence embeddings. It enables intelligent retrieval of images based on **text queries**, **image similarity**, or **embedded textual content**, all in an elegant UI built for clarity and speed.
 
 > ✨ Designed for creators, researchers, and developers to explore semantic media understanding with ease.
+
+---
+
+## 📚 Documentation
+
+For a detailed technical overview, architecture, setup instructions, and advanced usage, see the [`docs/`](docs/) directory. It contains:
+
+- System architecture and workflow
+- Model and embedding details
+- Data pipeline, search logic, UI/API, deployment, and more
+- A glossary of key terms
+
+Refer to these docs for in-depth understanding and implementation guidance.
 
 ---
 
