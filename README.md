@@ -18,7 +18,28 @@ For a detailed technical overview, architecture, setup instructions, and advance
 - A glossary of key terms
 
 Refer to these docs for in-depth understanding and implementation guidance.
+### Quick Setup
+1. Create a virtual environment:
+   ```
+   conda create -n Semantixel python=3.11 -y
+   conda activate semantixel
+   ```
 
+2. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+
+3. Configure Settings:
+   ```
+   python settings.py
+   ```
+
+4. Run: (Creates Index + Runs Server + Launches UI)
+   ```
+   python main.py
+   ```
+   
 ---
 
 ## 🏛️ Architecture
