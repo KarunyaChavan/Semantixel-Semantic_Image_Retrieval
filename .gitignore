@@ -22,5 +22,7 @@ face_db/*
 face_data/*
 !face_data/.gitkeep
 
-# Ignoring pycache from settings
-settings/__pycache__
+# Ignoring pycache dirs
+__pycache__/
+*.pyc
+*.pyo
