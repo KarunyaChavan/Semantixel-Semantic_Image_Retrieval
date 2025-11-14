@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="Semantixel WebUI/styles.css">
 </head>
 
-<body>
+<body onload="initializeUI()">
     <div style="display: flex; justify-content: center; margin: 8px">
         <img src="Semantixel WebUI/assets/logo_text.png" alt="Semantixel Logo"
             style="height: 70px;">
@@ -103,6 +103,11 @@
     </footer> -->
 
     <script>
+        // Initialize UI on page load with default settings
+        function initializeUI() {
+            changePlaceholder();
+        }
+
         function changePlaceholder() {
             var select = document.getElementById('route-select');
             var input = document.getElementById('search-input');
