@@ -21,7 +21,7 @@ Refer to these docs for in-depth understanding and implementation guidance.
 ### Quick Setup
 1. Create a virtual environment:
    ```
-   conda create -n Semantixel python=3.11 -y
+   conda create -n semantixel python=3.11 -y
    conda activate semantixel
    ```
 
