@@ -1,3 +1,4 @@
+# Core Dependencies
 tqdm==4.66.4
 requests
 pillow
@@ -8,15 +9,24 @@ chromadb==0.5.0
 einops==0.8.0
 python-doctr>=0.8.1
 PyYAML==6.0.1
+
+# ML & Vision
 clip-benchmark>=1.6.0
 datasets>=2.8.0
 open-clip-torch>=2.20.0
 timm>=0.9.5
+opencv-python
+mtcnn-opencv
+deepface
+tf-keras  # Required by DeepFace for TensorFlow 2.20+
+
+# Web & UI
 Flask
 flask-cors
 ttkbootstrap
 darkdetect
-opencv-python
-mtcnn-opencv
-deepface
 flowlauncher
+
+# Rust Integration
+maturin>=0.14.0  # For building Rust extensions
+# Note: semantixel-scanner wheel is installed via 'maturin develop --release'

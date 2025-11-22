@@ -43,6 +43,19 @@ Refer to these docs for in-depth understanding and implementation guidance.
    pip install -r requirements.txt
    ```
 
+3. Build RUST Bindings using maturin:
+   ```
+   cd semantixel_rust
+   maturin develop --release
+   cd ..
+   ```
+   ```
+   python rust_integration.py
+   ```
+   ```
+   python main.py --check-rust
+   ```
+
 3. Configure Settings:
    ```
    python settings.py

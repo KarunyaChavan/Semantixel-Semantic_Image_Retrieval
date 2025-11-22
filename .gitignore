@@ -26,3 +26,6 @@ face_data/*
 __pycache__/
 *.pyc
 *.pyo
+
+#Ignoring RUST build
+semantixel_rust/target/*
