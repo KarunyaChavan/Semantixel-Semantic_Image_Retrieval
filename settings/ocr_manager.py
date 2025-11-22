@@ -12,7 +12,7 @@ class OCRManager:
 
     def setup_ui(self):
         # Create frame for OCR settings
-        ocr_frame = ttk.LabelFrame(self.parent, text="OCR Settings")
+        ocr_frame = ttk.Labelframe(self.parent, text="OCR Settings")
         ocr_frame.pack(fill=tk.X, padx=10, pady=10)
 
         # OCR Provider selection
