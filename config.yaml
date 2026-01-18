@@ -6,7 +6,7 @@ clip:
 deep_scan: true
 exclude_directories: []
 include_directories:
-- /home/karunya/Pictures
+- C:/Users/Karunya/Pictures/Screenshots
 ocr_provider: doctr
 scan_method: default
 text_embed:

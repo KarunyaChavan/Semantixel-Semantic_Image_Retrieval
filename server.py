@@ -6,6 +6,7 @@ from Index.create_db import (
     get_clip_text,
     get_text_embeddings,
 )
+from text_embeddings.bm25_search import BM25TextIndex
 
 import os
 import warnings
@@ -27,6 +28,7 @@ logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICA
 logging.getLogger("chromadb.segment.impl.vector.local_persistent_hnsw").setLevel(logging.CRITICAL)
 
 image_collection, text_collection = create_vectordb("db")
+bm25_index = BM25TextIndex()  # Load BM25 index for keyword search
 
 
 def parse_image(image_path, top_k=5, threshold=0):
@@ -183,23 +185,28 @@ def clip_image_route():
 @app.route("/ebmed_text", methods=["POST"])
 def ebmed_text_route():
     """
-    Handle a POST request to search text embeddings.
+    Handle a POST request to search text embeddings using BM25 keyword search.
 
     Retrieves the following JSON fields from the request:
-        - query (str): The text to be embedded and searched.
-        - threshold (float): The minimum similarity threshold. Defaults to 0.
+        - query (str): The keyword(s) to search for in OCR content.
+        - threshold (float): Minimum BM25 score threshold. Defaults to 0.
         - top_k (int): The number of top results to return. Defaults to 5.
 
-    Calls `search_embed_text` to find matching text entries in the collection.
-    Returns the list of matching document paths (or identifiers) as JSON.
+    Uses BM25 algorithm for lexical/keyword matching instead of semantic search,
+    which is more suitable for exact text finding in OCR content.
 
     Returns:
-        flask.Response: A JSON response containing a list of text document paths.
+        flask.Response: A JSON response containing a list of image paths with matching text.
     """
     query = request.json.get("query", "")
     threshold = float(request.json.get("threshold", 0))
     top_k = int(request.json.get("top_k", 5))
-    paths, distances = search_embed_text(query, text_collection, top_k, threshold)
+    
+    if not query:
+        return jsonify([])
+    
+    # Use BM25 keyword search instead of semantic embeddings
+    paths = bm25_index.search(query, top_k=top_k, threshold=threshold)
     return jsonify(paths)
 
 

@@ -4,6 +4,7 @@ import os
 import sys
 import yaml
 from Index.scan import read_from_csv
+from text_embeddings.bm25_search import BM25TextIndex
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -66,20 +67,17 @@ def index_images(image_collection, text_collection):
     """
     Index images in the database.
 
-    This function iterates over all image paths in the OS-specific format (os_paths), and for each path,
-    it checks if the image is already in the image collection using the original path. If not, it gets
-    the image embeddings and upserts them into the image collection. It also applies OCR to the image
-    and upserts the text embeddings into the text collection.
+    This function iterates over all image paths, checks if already indexed,
+    and creates embeddings for both visual and text content. Text is indexed
+    using both semantic embeddings (Chroma) and BM25 keyword search.
 
     Args:
-        os_paths (list): The list of image paths in OS-specific format. These paths are used to read
-                         the images and apply OCR.
-        original_paths (list): The list of original image paths. These paths are used as IDs in the
-                               image and text collections.
         image_collection (Collection): The image collection in the database.
         text_collection (Collection): The text collection in the database.
     """
     paths, averages = read_from_csv("paths.csv")
+    bm25_index = BM25TextIndex()
+    
     with tqdm(total=len(paths), desc="Indexing images") as pbar:
         for i in range(0, len(paths), batch_size):
             batch_paths = paths[i : i + batch_size]
@@ -119,12 +117,19 @@ def index_images(image_collection, text_collection):
                 # Process OCR and text embeddings individually
                 for i in range(len(to_process)):
                     if ocr_texts[i] is not None:
+                        # Add to semantic embeddings (Chroma)
                         text_embeddings = get_text_embeddings(ocr_texts[i])
                         text_collection.upsert(
                             ids=[to_process[i]], embeddings=[text_embeddings]
                         )
+                        
+                        # Add to BM25 index (keyword search)
+                        bm25_index.add_document(to_process[i], ocr_texts[i])
 
             pbar.update(min(batch_size, len(paths) - i))
+    
+    # Rebuild and save BM25 index
+    bm25_index.rebuild_index()
 
 
 def clean_index(image_collection, text_collection, verbose=False):
