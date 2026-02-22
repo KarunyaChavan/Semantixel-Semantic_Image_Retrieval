@@ -195,7 +195,7 @@
 
             // Update the threshold slider background
             const percent = (threshold.value - threshold.min) / (threshold.max - threshold.min) * 100;
-            threshold.style.background = `linear-gradient(to right, var(--accent-glow) 0%, var(--accent-glow) ${percent}%, var(--input-background-color) ${percent}%, var(--input-background-color) 100%)`;
+            threshold.style.background = `linear-gradient(to right, var(--accent-glow) 0%, var(--accent-glow) ${percent}%, var(--input-bg) ${percent}%, var(--input-bg) 100%)`;
         }
 
         function performSearch() {
@@ -623,7 +623,7 @@
         document.getElementById('threshold').addEventListener('input', function () {
             document.getElementById('threshold-value').textContent = this.value;
             const percent = (this.value - this.min) / (this.max - this.min) * 100;
-            this.style.background = `linear-gradient(to right, var(--accent-glow) 0%, var(--accent-glow) ${percent}%, var(--input-background-color) ${percent}%, var(--input-background-color) 100%)`;
+            this.style.background = `linear-gradient(to right, var(--accent-glow) 0%, var(--accent-glow) ${percent}%, var(--input-bg) ${percent}%, var(--input-bg) 100%)`;
         });
 
         // View Toggling & Semantic Graph Logic
