@@ -4,6 +4,15 @@
 <head>
     <link rel="icon" href="Semantixel WebUI/assets/icon.png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Force Graph Library -->
+    <script src="https://unpkg.com/force-graph"></script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SemantiXel WebUI</title>
@@ -11,54 +20,88 @@
 </head>
 
 <body onload="initializeUI()">
-    <div style="display: flex; justify-content: center; margin: 8px">
-        <img src="Semantixel WebUI/assets/logo_text.png" alt="Semantixel Logo" style="height: 70px;">
-    </div>
-    <div class="container">
-        <div class="search-bar">
-            <input type="text" id="search-input" placeholder="Enter text to search">
-            <select id="route-select" class="modern-select" onchange="changePlaceholder()">
-                <option value="clip_text">Caption search</option>
-                <option value="ebmed_text">Text content search</option>
-                <option value="clip_image">Similar images search</option>
-            </select>
-            <button onclick="performSearch()" style="margin: 0 10px;">Search</button>
-        </div>
-        <div class="search-options">
-            <div class="search-option">
-                <label for="threshold">Threshold:</label>
-                <input type="range" id="threshold" min="0" max="1" step="0.01" value="0">
-                <span id="threshold-value">0</span>
-                <button class="help-btn" onclick="showHelp('threshold')" title="Learn about threshold">
-                    <i class="fas fa-question-circle"></i>
-                </button>
-            </div>
-            <div class="search-option">
-                <label for="top-k">Top K:</label>
-                <input type="number" id="top-k" min="1" max="99" value="10">
-                <button class="help-btn" onclick="showHelp('topk')" title="Learn about Top K">
-                    <i class="fas fa-question-circle"></i>
-                </button>
-            </div>
-            <div class="search-option">
-                <label for="media-type">Media Type:</label>
-                <select id="media-type" class="modern-select"
-                    style="width: auto; padding: 8px 30px 8px 15px; font-size: 14px;">
-                    <option value="all">All Media</option>
-                    <option value="image">Images Only</option>
-                    <option value="video">Videos Only</option>
+    <header class="app-header">
+        <a href="/" class="logo-link">
+            <img src="Semantixel WebUI/assets/logo_text.png" alt="Semantixel Logo" class="app-logo">
+        </a>
+    </header>
+
+    <main class="container">
+        <!-- View Toggle -->
+        <nav class="view-toggle" aria-label="View Toggle">
+            <button id="btn-gallery-view" class="toggle-btn active" onclick="switchView('gallery')">
+                <i class="fas fa-th"></i> Gallery View
+            </button>
+            <button id="btn-graph-view" class="toggle-btn" onclick="switchView('graph')">
+                <i class="fas fa-project-diagram"></i> Graph View
+            </button>
+        </nav>
+
+        <section class="search-section" aria-label="Search Controls">
+            <div class="search-bar">
+                <input type="text" id="search-input" placeholder="Enter text to search">
+                <select id="route-select" class="modern-select" onchange="changePlaceholder()">
+                    <option value="clip_text">Caption search</option>
+                    <option value="ebmed_text">Text content search</option>
+                    <option value="clip_image">Similar images search</option>
                 </select>
+                <button onclick="performSearch()" class="search-btn"><i class="fas fa-search"></i> Search</button>
             </div>
-            <div class="search-option">
-                <button class="help-btn-main" onclick="showHelp('modes')" title="Learn about search modes">
-                    <i class="fas fa-info-circle"></i> Search Guide
+            <div class="search-options">
+                <div class="search-option">
+                    <label for="threshold">Threshold:</label>
+                    <input type="range" id="threshold" min="0" max="1" step="0.01" value="0">
+                    <span id="threshold-value">0</span>
+                    <button class="help-btn" onclick="showHelp('threshold')" title="Learn about threshold"
+                        aria-label="Help with threshold">
+                        <i class="fas fa-question-circle"></i>
+                    </button>
+                </div>
+                <div class="search-option">
+                    <label for="top-k">Top K:</label>
+                    <input type="number" id="top-k" min="1" max="99" value="10">
+                    <button class="help-btn" onclick="showHelp('topk')" title="Learn about Top K"
+                        aria-label="Help with Top K">
+                        <i class="fas fa-question-circle"></i>
+                    </button>
+                </div>
+                <div class="search-option">
+                    <label for="media-type">Media Type:</label>
+                    <select id="media-type" class="modern-select filter-select">
+                        <option value="all">All Media</option>
+                        <option value="image">Images Only</option>
+                        <option value="video">Videos Only</option>
+                    </select>
+                </div>
+                <div class="search-option">
+                    <button class="help-btn-main" onclick="showHelp('modes')" title="Learn about search modes">
+                        <i class="fas fa-info-circle"></i> Guide
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Gallery View Body -->
+        <section id="gallery-view" class="view-section active-view" aria-label="Search Results">
+            <div class="loader" id="loader" role="status" aria-label="Loading results"></div>
+            <div class="results" id="results"></div>
+        </section>
+
+        <!-- Graph View Body -->
+        <section id="graph-view" class="view-section" aria-label="Semantic Relationship Graph" style="display: none;">
+            <div class="graph-controls">
+                <button onclick="loadGraphData()" class="action-btn" id="btn-load-graph" style="display: none;">
+                    <i class="fas fa-sync-alt"></i> Refresh Graph
                 </button>
+                <span class="graph-info"><i class="fas fa-info-circle"></i> Hover over nodes to preview. Click nodes to
+                    expand.</span>
             </div>
-        </div>
-        <div class="loader" id="loader"></div>
-        <div class="results" id="results"></div>
-    </div>
-    <div class="enlarged-img" id="enlarged-img-container"></div>
+            <div class="loader" id="graph-loader" role="status" aria-label="Loading graph" style="display: none;"></div>
+            <div id="graph-container" class="graph-container"></div>
+        </section>
+    </main>
+
+    <dialog class="enlarged-img" id="enlarged-img-container"></dialog>
 
     <!-- Image Path Display Panel -->
     <div class="image-path-panel" id="image-path-panel" style="display: none;">
@@ -152,7 +195,7 @@
 
             // Update the threshold slider background
             const percent = (threshold.value - threshold.min) / (threshold.max - threshold.min) * 100;
-            threshold.style.background = `linear-gradient(to right, #007bff 0%, #007bff ${percent}%, var(--input-background-color) ${percent}%, var(--input-background-color) 100%)`;
+            threshold.style.background = `linear-gradient(to right, var(--accent-glow) 0%, var(--accent-glow) ${percent}%, var(--input-background-color) ${percent}%, var(--input-background-color) 100%)`;
         }
 
         function performSearch() {
@@ -181,11 +224,47 @@
                 .then(response => response.json())
                 .then(data => {
                     loader.style.display = 'none';
+
+                    // --- SUBGRAPH INTERCEPT LOGIC ---
+                    const isGraphView = document.getElementById('graph-view').style.display !== 'none';
+                    if (isGraphView) {
+                        const compositeIds = data.map(item => item.composite_id || item.path);
+
+                        if (compositeIds.length === 0) {
+                            initGraph({ nodes: [], links: [] });
+                            return;
+                        }
+
+                        const graphLoader = document.getElementById('graph-loader');
+                        graphLoader.style.display = 'block';
+
+                        fetch(`http://${window.location.hostname}:${port}/subgraph_data`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ ids: compositeIds })
+                        })
+                            .then(res => res.json())
+                            .then(graphData => {
+                                initGraph(graphData);
+                                graphLoader.style.display = 'none';
+
+                                // Show the reset button to easily return to full graph
+                                document.getElementById('btn-load-graph').style.display = 'inline-flex';
+                            })
+                            .catch(err => {
+                                console.error("Subgraph fetch failed:", err);
+                                graphLoader.style.display = 'none';
+                            });
+
+                        return; // Prevent rendering the standard gallery
+                    }
+                    // --------------------------------
+
                     data.forEach(item => {
                         let resultElement;
 
                         if (item.type === 'video') {
-                            resultElement = document.createElement('div');
+                            resultElement = document.createElement('figure');
                             resultElement.className = 'video-container';
                             resultElement.dataset.originalPath = item.path; // Store original path
 
@@ -195,8 +274,8 @@
                             video.controls = true;
                             video.preload = "metadata";
 
-                            // A simple timestamp badge for the UI
-                            const badge = document.createElement('div');
+                            // A semantic timestamp badge
+                            const badge = document.createElement('figcaption');
                             badge.className = 'timestamp-badge';
                             badge.textContent = `Match at ${item.timestamp.toFixed(1)}s`;
 
@@ -209,11 +288,16 @@
                                 showImagePath(item.path);
                             };
                         } else {
-                            resultElement = document.createElement('img');
-                            resultElement.src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(item.path)}`;
+                            resultElement = document.createElement('figure');
+                            resultElement.className = 'image-container';
+                            const img = document.createElement('img');
+                            img.src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(item.path)}`;
                             resultElement.dataset.originalPath = item.path; // Store original path
+
+                            resultElement.appendChild(img);
+
                             resultElement.onclick = () => {
-                                displayEnlargedImage(resultElement.src);
+                                displayEnlargedImage(img.src);
                                 highlightSelectedImage(resultElement);
                                 showImagePath(item.path);
                             };
@@ -231,26 +315,44 @@
         function displayEnlargedImage(src) {
             const enlargedImgContainer = document.getElementById('enlarged-img-container');
             enlargedImgContainer.innerHTML = '';
+
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'dialog-close-btn';
+            closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+            closeBtn.onclick = () => enlargedImgContainer.close();
+
             const img = document.createElement('img');
             img.src = src;
             img.onclick = () => {
                 window.open(src);
             };
+
+            enlargedImgContainer.appendChild(closeBtn);
             enlargedImgContainer.appendChild(img);
+            enlargedImgContainer.showModal();
         }
 
         function displayEnlargedVideo(src) {
             const enlargedImgContainer = document.getElementById('enlarged-img-container');
             enlargedImgContainer.innerHTML = '';
+
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'dialog-close-btn';
+            closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+            closeBtn.onclick = () => enlargedImgContainer.close();
+
             const video = document.createElement('video');
             video.src = src;
             video.controls = true;
             video.autoplay = true;
+
+            enlargedImgContainer.appendChild(closeBtn);
             enlargedImgContainer.appendChild(video);
+            enlargedImgContainer.showModal();
         }
 
         function highlightSelectedImage(selectedElement) {
-            const allElements = document.querySelectorAll('.results img, .results .video-container');
+            const allElements = document.querySelectorAll('.results figure');
             allElements.forEach(el => {
                 el.classList.remove('selected-img');
             });
@@ -521,8 +623,102 @@
         document.getElementById('threshold').addEventListener('input', function () {
             document.getElementById('threshold-value').textContent = this.value;
             const percent = (this.value - this.min) / (this.max - this.min) * 100;
-            this.style.background = `linear-gradient(to right, #007bff 0%, #007bff ${percent}%, var(--input-background-color) ${percent}%, var(--input-background-color) 100%)`;
+            this.style.background = `linear-gradient(to right, var(--accent-glow) 0%, var(--accent-glow) ${percent}%, var(--input-background-color) ${percent}%, var(--input-background-color) 100%)`;
         });
+
+        // View Toggling & Semantic Graph Logic
+        let semanticGraph = null;
+
+        function switchView(viewName) {
+            // Update active buttons
+            document.querySelectorAll('.toggle-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`btn-${viewName}-view`).classList.add('active');
+
+            // Show appropriate section
+            document.querySelectorAll('.view-section').forEach(sec => sec.style.display = 'none');
+            document.getElementById(`${viewName}-view`).style.display = 'block';
+
+            if (viewName === 'graph' && !semanticGraph) {
+                // Initialize default empty graph if first time to prevent layout shift
+                initGraph(null);
+                // Automatically fetch and load graph data the first time
+                loadGraphData();
+            }
+        }
+
+        function initGraph(graphData) {
+            const elem = document.getElementById('graph-container');
+            const port = window.location.port || 8080;
+
+            if (!semanticGraph) {
+                semanticGraph = ForceGraph()(elem)
+                    .width(elem.clientWidth)
+                    .height(600)
+                    .backgroundColor('rgba(0,0,0,0)')
+                    .nodeLabel('fileName')
+                    .nodeAutoColorBy('type')
+                    .linkWidth(link => link.value * 2)
+                    .linkColor(() => 'var(--border-color)')
+                    .onNodeClick(node => {
+                        const src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(node.path)}`;
+                        if (node.type === 'video') {
+                            displayEnlargedVideo(src + `#t=${node.timestamp}`);
+                        } else {
+                            displayEnlargedImage(src);
+                        }
+                        showImagePath(node.composite_id);
+                    })
+                    .nodeCanvasObject((node, ctx, globalScale) => {
+                        const label = node.fileName;
+                        const isVideo = node.type === 'video';
+                        const fontSize = 12 / globalScale;
+                        ctx.font = `${fontSize}px Inter`;
+
+                        // Draw Circle
+                        const r = 5;
+                        ctx.beginPath();
+                        ctx.arc(node.x, node.y, r, 0, 2 * Math.PI, false);
+                        ctx.fillStyle = isVideo ? '#ff4d4d' : '#4da3ff';
+                        ctx.fill();
+
+                        // Draw label text
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text-color');
+                        ctx.fillText(label, node.x, node.y + 8);
+                    });
+            }
+
+            if (graphData) {
+                semanticGraph.graphData(graphData);
+            }
+        }
+
+        function loadGraphData() {
+            const btn = document.getElementById('btn-load-graph');
+            const loader = document.getElementById('graph-loader');
+            const port = window.location.port || 8080;
+            const url = `http://${window.location.hostname}:${port}/graph_data`;
+
+            btn.disabled = true;
+            loader.style.display = 'block';
+
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    initGraph(data);
+                    btn.disabled = false;
+                    loader.style.display = 'none';
+
+                    // Hide the reset button since we are back to default view
+                    btn.style.display = 'none';
+                })
+                .catch(e => {
+                    console.error("Graph fetch failed:", e);
+                    btn.disabled = false;
+                    loader.style.display = 'none';
+                });
+        }
     </script>
 </body>
 

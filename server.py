@@ -1,4 +1,4 @@
-from flask import Flask, abort, request, jsonify, send_from_directory
+from flask import Flask, abort, request, jsonify, send_from_directory, send_file, render_template_string
 from flask_cors import CORS
 from Index.create_db import (
     create_vectordb,
@@ -15,6 +15,11 @@ import requests
 from face_recognition.face_search import search_face_by_name
 from face_recognition.integrated_search import integrated_face_semantic_search
 from io import BytesIO
+import json
+import time
+from urllib.parse import unquote
+import torch
+import torch.nn.functional as F
 
 # Comprehensive warning suppression
 warnings.filterwarnings("ignore")
@@ -26,6 +31,19 @@ os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 # Suppress specific ChromaDB logging
 logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICAL)
 logging.getLogger("chromadb.segment.impl.vector.local_persistent_hnsw").setLevel(logging.CRITICAL)
+
+# Setup logging (assuming log_config.py exists and setup_logging is defined)
+# If log_config.py is not available, this line will cause an error.
+# For now, we'll use a basic logger.
+# from log_config import setup_logging
+# logger = setup_logging()
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+handler = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
 
 image_collection, text_collection = create_vectordb("db")
 bm25_index = BM25TextIndex()  # Load BM25 index for keyword search
@@ -193,6 +211,24 @@ def search_embed_text(text, text_collection, top_k=5, threshold=0):
     ], [d for d in similarities if d > threshold]
     return paths, similarities
 
+def process_search_results(paths):
+    """Helper function to format search results."""
+    formatted_results = []
+    for path in paths:
+        if ":::" in path:
+            video_path, timestamp = path.split(":::")
+            formatted_results.append({
+                "path": video_path,
+                "type": "video",
+                "timestamp": float(timestamp),
+                "composite_id": path
+            })
+        else:
+            formatted_results.append({
+                "path": path,
+                "type": "image"
+            })
+    return formatted_results
 
 # Flask App
 app = Flask(__name__, static_folder="UI/Semantixel WebUI")
@@ -303,35 +339,40 @@ def ebmed_text_route():
     Returns:
         flask.Response: A JSON response containing a list of image paths with matching text.
     """
-    query = request.json.get("query", "")
-    threshold = float(request.json.get("threshold", 0))
-    top_k = int(request.json.get("top_k", 5))
-    media_type = request.json.get("media_type", "all")
+    try:
+        data = request.json
+        query = data.get("query", "")
+        threshold = float(data.get("threshold", 0.1))
+        top_k = int(data.get("top_k", 5))
+        media_type = data.get("media_type", "all")
     
-    if not query:
-        return jsonify([])
-    
-    # Use BM25 keyword search instead of semantic embeddings
-    paths = bm25_index.search(query, top_k=top_k, threshold=threshold, media_type=media_type)
-    
-    # Format paths
-    formatted_results = []
-    for path in paths:
-        if ":::" in path:
-            video_path, timestamp = path.split(":::")
-            formatted_results.append({
-                "path": video_path,
-                "type": "video",
-                "timestamp": float(timestamp),
-                "composite_id": path
-            })
-        else:
-            formatted_results.append({
-                "path": path,
-                "type": "image"
-            })
-            
-    return jsonify(formatted_results)
+        if not query:
+            return jsonify([])
+        
+        # Use BM25 keyword search instead of semantic embeddings
+        paths = bm25_index.search(query, top_k=top_k, threshold=threshold, media_type=media_type)
+        
+        # Format paths
+        formatted_results = []
+        for path in paths:
+            if ":::" in path:
+                video_path, timestamp = path.split(":::")
+                formatted_results.append({
+                    "path": video_path,
+                    "type": "video",
+                    "timestamp": float(timestamp),
+                    "composite_id": path
+                })
+            else:
+                formatted_results.append({
+                    "path": path,
+                    "type": "image"
+                })
+                
+        return jsonify(formatted_results)
+    except Exception as e:
+        logger.error(f"Error in ebmed_text route: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/face_search", methods=["POST"])
@@ -347,6 +388,185 @@ def integrated_search_route():
     top_k = int(request.json.get("top_k", 10))
     results = integrated_face_semantic_search(query, image_collection, top_k, threshold)
     return jsonify(results)
+
+@app.route("/graph_data", methods=["GET"])
+def graph_data_route():
+    """
+    Returns a JSON structure containing { nodes: [...], links: [...] }.
+    Calculates the pairwise cosine similarity between all embeddings in the DB
+    and creates edges for the top K closest neighbors of each node.
+    """
+    try:
+        t0 = time.time()
+        
+        # 1. Fetch all embeddings and metadata
+        data = image_collection.get(include=["embeddings"])
+        ids = data["ids"]
+        embeddings = data["embeddings"]
+        
+        if not ids or len(ids) == 0:
+            return jsonify({"nodes": [], "links": []})
+            
+        # Create Nodes
+        nodes = []
+        for i, doc_id in enumerate(ids):
+            is_video = ":::" in doc_id
+            
+            if is_video:
+                path, timestamp = doc_id.rsplit(":::", 1)
+                file_name = os.path.basename(path)
+                nodes.append({
+                    "id": doc_id,
+                    "composite_id": doc_id,
+                    "path": path,
+                    "type": "video",
+                    "timestamp": float(timestamp),
+                    "fileName": f"{file_name} ({timestamp}s)"
+                })
+            else:
+                nodes.append({
+                    "id": doc_id,
+                    "composite_id": doc_id,
+                    "path": doc_id,
+                    "type": "image",
+                    "fileName": os.path.basename(doc_id)
+                })
+                
+        # 2. Calculate similarities efficiently using PyTorch
+        embs_tensor = torch.tensor(embeddings)
+        # Cosine similarity matrix (N x N)
+        sim_matrix = F.cosine_similarity(embs_tensor.unsqueeze(1), embs_tensor.unsqueeze(0), dim=2)
+        
+        # 3. Create Links (Sparse Graph)
+        # For a clean visual graph, we only connect each node to its top ~3 closest neighbors
+        TOP_K_NEIGHBORS = 3
+        MIN_SIMILARITY = 0.5 # Ignore incredibly weak links even if they are in the top 3
+        
+        links = []
+        
+        # Prevent self-loops (diagonal = 1.0) by filling diagonal with -1
+        sim_matrix.fill_diagonal_(-1.0)
+        
+        # Get top K values and indices for each row
+        top_values, top_indices = torch.topk(sim_matrix, min(TOP_K_NEIGHBORS, len(ids) - 1), dim=1)
+        
+        # Keep track of added edges to prevent bidirectional duplicates like A->B and B->A
+        seen_edges = set()
+        
+        for i in range(len(ids)):
+            source_id = ids[i]
+            for j in range(top_indices.shape[1]):
+                target_idx = top_indices[i, j].item()
+                similarity = top_values[i, j].item()
+                target_id = ids[target_idx]
+                
+                if similarity > MIN_SIMILARITY:
+                    # Create undirected edge key
+                    edge_tuple = tuple(sorted([source_id, target_id]))
+                    if edge_tuple not in seen_edges:
+                        seen_edges.add(edge_tuple)
+                        links.append({
+                            "source": source_id,
+                            "target": target_id,
+                            "value": float(similarity)
+                        })
+                        
+        logger.info(f"Generated Semantic Graph: {len(nodes)} nodes, {len(links)} edges in {time.time()-t0:.3f}s")
+        return jsonify({
+            "nodes": nodes,
+            "links": links
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating graph data: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/subgraph_data", methods=["POST"])
+def subgraph_data_route():
+    """
+    Returns a Graph structure for a specific subset of composite IDs (Search Results).
+    """
+    try:
+        t0 = time.time()
+        data_req = request.json
+        composite_ids = data_req.get("ids", [])
+        
+        if not composite_ids:
+            return jsonify({"nodes": [], "links": []})
+            
+        # Fetch embeddings only for the provided IDs
+        data = image_collection.get(ids=composite_ids, include=["embeddings"])
+        ids = data["ids"]
+        embeddings = data["embeddings"]
+        
+        if not ids or len(ids) == 0:
+            return jsonify({"nodes": [], "links": []})
+            
+        nodes = []
+        for i, doc_id in enumerate(ids):
+            is_video = ":::" in doc_id
+            if is_video:
+                path, timestamp = doc_id.rsplit(":::", 1)
+                file_name = os.path.basename(path)
+                nodes.append({
+                    "id": doc_id,
+                    "composite_id": doc_id,
+                    "path": path,
+                    "type": "video",
+                    "timestamp": float(timestamp),
+                    "fileName": f"{file_name} ({timestamp}s)"
+                })
+            else:
+                nodes.append({
+                    "id": doc_id,
+                    "composite_id": doc_id,
+                    "path": doc_id,
+                    "type": "image",
+                    "fileName": os.path.basename(doc_id)
+                })
+                
+        # Calculate similarities 
+        embs_tensor = torch.tensor(embeddings)
+        sim_matrix = F.cosine_similarity(embs_tensor.unsqueeze(1), embs_tensor.unsqueeze(0), dim=2)
+        
+        # Sub-graphs are usually small (10-30 nodes). Connect top 2 neighbors to show clusters
+        TOP_K_NEIGHBORS = min(2, len(ids) - 1)
+        MIN_SIMILARITY = 0.5 
+        
+        links = []
+        if TOP_K_NEIGHBORS > 0:
+            sim_matrix.fill_diagonal_(-1.0)
+            top_values, top_indices = torch.topk(sim_matrix, TOP_K_NEIGHBORS, dim=1)
+            
+            seen_edges = set()
+            for i in range(len(ids)):
+                source_id = ids[i]
+                for j in range(top_indices.shape[1]):
+                    target_idx = top_indices[i, j].item()
+                    similarity = top_values[i, j].item()
+                    target_id = ids[target_idx]
+                    
+                    if similarity > MIN_SIMILARITY:
+                        edge_tuple = tuple(sorted([source_id, target_id]))
+                        if edge_tuple not in seen_edges:
+                            seen_edges.add(edge_tuple)
+                            links.append({
+                                "source": source_id,
+                                "target": target_id,
+                                "value": float(similarity)
+                            })
+                            
+        logger.info(f"Generated Semantic Sub-Graph: {len(nodes)} nodes, {len(links)} edges in {time.time()-t0:.3f}s")
+        return jsonify({
+            "nodes": nodes,
+            "links": links
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating subgraph data: {str(e)}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/")
 def serve_index():
