@@ -65,11 +65,12 @@ def create_vectordb(path):
 
 def index_images(image_collection, text_collection):
     """
-    Index images in the database.
+    Index images and extract video frames in the database.
 
-    This function iterates over all image paths, checks if already indexed,
-    and creates embeddings for both visual and text content. Text is indexed
-    using both semantic embeddings (Chroma) and BM25 keyword search.
+    This function iterates over all image/video paths. For images, it processes them normally.
+    For videos, it extracts frames in memory, generating a composite ID like `video.mp4:::timestamp`,
+    and creates embeddings for both visual and text content. 
+    Text is indexed using both semantic embeddings (Chroma) and BM25 keyword search.
 
     Args:
         image_collection (Collection): The image collection in the database.
@@ -78,53 +79,82 @@ def index_images(image_collection, text_collection):
     paths, averages = read_from_csv("paths.csv")
     bm25_index = BM25TextIndex()
     
-    with tqdm(total=len(paths), desc="Indexing images") as pbar:
+    video_extensions = {".mp4", ".mkv", ".avi", ".mov"}
+    
+    with tqdm(total=len(paths), desc="Indexing media") as pbar:
         for i in range(0, len(paths), batch_size):
             batch_paths = paths[i : i + batch_size]
-            to_process = []
+            to_process_paths = []
+            
+            # For collecting the actual items to feed into CLIP/OCR
+            # This will be a mix of strings (image paths) and PIL Images (video frames)
+            processing_inputs = []
+            processing_ids = []
+            processing_metadatas = []
 
             for path in batch_paths:
-                if len(image_collection.get(ids=[path])["ids"]) > 0:
-                    if deep_scan:
-                        # Check if the average pixel value has changed
-                        average = image_collection.get(ids=[path])["metadatas"][0][
-                            "average"
-                        ]
-                        if average != averages[paths.index(path)]:
-                            to_process.append(path)
+                is_video = path.lower().endswith(tuple(video_extensions))
+                
+                # We need a robust way to check if a video has been indexed.
+                # Since we don't know the exact timestamps that were generated unless we query them,
+                # we'll do a prefix query or just check if ANY frame from this video exists.
+                # Since ChromaDB get() doesn't support prefix matching easily without where clauses,
+                # for now, we'll check if the base path exists in metadatas or we just re-index if it's new.
+                # A better approach: query by metadata where source_video = path.
+                
+                if is_video:
+                    results = image_collection.get(where={"source_video": path})
+                    if len(results["ids"]) == 0:
+                        to_process_paths.append(path)
                 else:
-                    to_process.append(path)
+                    if len(image_collection.get(ids=[path])["ids"]) > 0:
+                        if deep_scan:
+                            # Check if the average pixel value has changed
+                            average = image_collection.get(ids=[path])["metadatas"][0]["average"]
+                            if average != averages[paths.index(path)]:
+                                to_process_paths.append(path)
+                    else:
+                        to_process_paths.append(path)
 
-            if to_process:
+            for path in to_process_paths:
+                if path.lower().endswith(tuple(video_extensions)):
+                    from Index.video_utils import extract_frames_in_memory
+                    frames_data = extract_frames_in_memory(path, fps=1)
+                    for frame_data in frames_data:
+                        processing_inputs.append(frame_data["image"])
+                        composite_id = f"{path}:::{frame_data['timestamp']}"
+                        processing_ids.append(composite_id)
+                        processing_metadatas.append({"average": 0, "source_video": path, "timestamp": frame_data['timestamp'], "type": "video_frame"})
+                else:
+                    processing_inputs.append(path)
+                    processing_ids.append(path)
+                    processing_metadatas.append({"average": averages[paths.index(path)], "type": "image"})
+
+            if processing_inputs:
                 # Process CLIP embeddings in batch
-                image_embeddings = get_clip_image(to_process)
-
-                # Prepare data for batch upsert
-                upsert_ids = to_process
-                upsert_embeddings = image_embeddings
-                upsert_metadatas = [
-                    {"average": averages[paths.index(path)]} for path in to_process
-                ]
+                image_embeddings = get_clip_image(processing_inputs)
 
                 # Perform batch upsert for image collection
                 image_collection.upsert(
-                    ids=upsert_ids,
-                    embeddings=upsert_embeddings,
-                    metadatas=upsert_metadatas,
+                    ids=processing_ids,
+                    embeddings=image_embeddings,
+                    metadatas=processing_metadatas,
                 )
-                ocr_texts = apply_OCR(to_process)
+                ocr_texts = apply_OCR(processing_inputs)
 
                 # Process OCR and text embeddings individually
-                for i in range(len(to_process)):
-                    if ocr_texts[i] is not None:
+                for idx in range(len(processing_inputs)):
+                    current_id = processing_ids[idx]
+                    if ocr_texts[idx] is not None:
                         # Add to semantic embeddings (Chroma)
-                        text_embeddings = get_text_embeddings(ocr_texts[i])
+                        text_embeddings = get_text_embeddings(ocr_texts[idx])
                         text_collection.upsert(
-                            ids=[to_process[i]], embeddings=[text_embeddings]
+                            ids=[current_id], embeddings=[text_embeddings],
+                            metadatas=[processing_metadatas[idx]]
                         )
                         
                         # Add to BM25 index (keyword search)
-                        bm25_index.add_document(to_process[i], ocr_texts[i])
+                        bm25_index.add_document(current_id, ocr_texts[idx])
 
             pbar.update(min(batch_size, len(paths) - i))
     
@@ -137,7 +167,9 @@ def clean_index(image_collection, text_collection, verbose=False):
     Clean up the database.
 
     This function iterates over all IDs in the image collection, and for each ID, it checks if the ID is in
-    the list of original image paths. If not, it deletes the ID from the image collection and the text collection.
+    the list of original image paths. For video frames (IDs spanning composite format `path:::timestamp`), 
+    it will check if the source video path is still valid.
+    If not, it deletes the ID from the image collection and the text collection.
 
     Args:
         paths (list): The list of original image paths. These paths are used as IDs in the
@@ -154,7 +186,11 @@ def clean_index(image_collection, text_collection, verbose=False):
         total=len(all_image_ids),
         desc="Cleaning up database",
     ):
-        if id not in paths:
+        
+        # Determine the base path (for images: id, for video frames: split by ':::')
+        base_path = id.split(":::")[0] if ":::" in id else id
+        
+        if base_path not in paths:
             # Check if ID exists in image collection before deletion
             if id in all_image_ids:
                 if verbose:

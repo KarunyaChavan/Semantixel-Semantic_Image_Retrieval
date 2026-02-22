@@ -33,7 +33,7 @@ button {
     background-color: var(--input-background-color);
     color: var(--input-text-color);
     font-size: 16px;
-    
+
     transition: all 0.3s ease;
 }
 
@@ -66,7 +66,8 @@ button:hover {
     justify-content: center;
 }
 
-.results img {
+.results img,
+.results .video-container {
     width: calc(25% - 30px);
     height: auto;
     max-width: 100%;
@@ -75,9 +76,31 @@ button:hover {
     border-radius: 10px;
     transition: transform 0.3s ease, box-shadow 0.3s ease;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    position: relative;
+    overflow: hidden;
 }
 
-.results img:hover {
+.results .video-container video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 10px;
+}
+
+.timestamp-badge {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    pointer-events: none;
+}
+
+.results img:hover,
+.results .video-container:hover {
     transform: scale(1.05);
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
 }
@@ -135,8 +158,13 @@ button:hover {
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
 }
 
 .selected-img {
@@ -190,7 +218,8 @@ button:hover {
 .threshold-container {
     display: flex;
     align-items: center;
-    width: 280px; /* Fixed width for the container */
+    width: 280px;
+    /* Fixed width for the container */
 }
 
 /* Add this to your CSS */
@@ -284,13 +313,17 @@ button:hover {
 }
 
 @media (max-width: 900px) {
-    .results img {
+
+    .results img,
+    .results .video-container {
         width: calc(33.33% - 30px);
     }
 }
 
 @media (max-width: 600px) {
-    .results img {
+
+    .results img,
+    .results .video-container {
         width: calc(50% - 30px);
     }
 
@@ -311,7 +344,9 @@ button:hover {
 }
 
 @media (max-width: 400px) {
-    .results img {
+
+    .results img,
+    .results .video-container {
         width: calc(100% - 30px);
     }
 
@@ -410,7 +445,8 @@ footer a:hover {
     flex-wrap: wrap;
 }
 
-.copy-btn, .action-btn {
+.copy-btn,
+.action-btn {
     padding: 8px 12px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
@@ -424,7 +460,8 @@ footer a:hover {
     gap: 5px;
 }
 
-.copy-btn:hover, .action-btn:hover {
+.copy-btn:hover,
+.action-btn:hover {
     background-color: #0056b3;
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
@@ -460,6 +497,7 @@ footer a:hover {
         transform: translateX(100%);
         opacity: 0;
     }
+
     to {
         transform: translateX(0);
         opacity: 1;
@@ -467,7 +505,8 @@ footer a:hover {
 }
 
 /* Help System Styles */
-.help-btn, .help-btn-main {
+.help-btn,
+.help-btn-main {
     background: none;
     border: 1px solid var(--border-color);
     color: #007bff;
@@ -489,7 +528,8 @@ footer a:hover {
     font-size: 14px;
 }
 
-.help-btn:hover, .help-btn-main:hover {
+.help-btn:hover,
+.help-btn-main:hover {
     background-color: #007bff;
     color: white;
     transform: scale(1.1);
@@ -552,8 +592,13 @@ footer a:hover {
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 @keyframes slideUp {
@@ -561,6 +606,7 @@ footer a:hover {
         transform: translateY(50px);
         opacity: 0;
     }
+
     to {
         transform: translateY(0);
         opacity: 1;
@@ -574,14 +620,16 @@ footer a:hover {
     font-size: 20px;
 }
 
-.threshold-guide, .topk-guide {
+.threshold-guide,
+.topk-guide {
     display: flex;
     flex-direction: column;
     gap: 15px;
     margin: 20px 0;
 }
 
-.threshold-item, .topk-item {
+.threshold-item,
+.topk-item {
     display: flex;
     align-items: center;
     padding: 15px;
@@ -590,7 +638,8 @@ footer a:hover {
     border-left: 4px solid #007bff;
 }
 
-.threshold-value, .topk-value {
+.threshold-value,
+.topk-value {
     font-weight: bold;
     font-size: 18px;
     color: #007bff;
@@ -598,7 +647,8 @@ footer a:hover {
     margin-right: 15px;
 }
 
-.threshold-desc, .topk-desc {
+.threshold-desc,
+.topk-desc {
     color: var(--text-color);
 }
 
@@ -703,26 +753,29 @@ footer a:hover {
         right: 20px;
         left: 20px;
     }
-    
+
     .modal-content {
         width: 95%;
         margin: 20px;
     }
-    
-    .modal-header, .modal-body {
+
+    .modal-header,
+    .modal-body {
         padding: 15px;
     }
-    
+
     .path-actions {
         flex-direction: column;
     }
-    
-    .threshold-item, .topk-item {
+
+    .threshold-item,
+    .topk-item {
         flex-direction: column;
         text-align: center;
     }
-    
-    .threshold-value, .topk-value {
+
+    .threshold-value,
+    .topk-value {
         margin-bottom: 10px;
     }
 }

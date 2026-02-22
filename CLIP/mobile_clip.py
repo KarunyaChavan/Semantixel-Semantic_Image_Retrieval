@@ -80,35 +80,44 @@ device = (
 model.to(device)
 
 
-def preprocess_image(image_path):
+def preprocess_image(image_input):
     """
-    Opens and preprocesses a single image.
+    Preprocesses a single image or image path.
 
     Args:
-        image_path (str): The path to the image file.
+        image_input (str or PIL.Image): The path to the image file or a PIL Image.
 
     Returns:
         torch.Tensor: The preprocessed image tensor.
     """
-    image = Image.open(image_path)
+    if isinstance(image_input, str):
+        image = Image.open(image_input)
+    else:
+        # Assume it's already a PIL Image
+        image = image_input
     return preprocess(image.convert("RGB"))
 
 
-def get_clip_image(image_paths):
+def get_clip_image(image_input):
     """
-    Computes the image embeddings for a batch of images and calculates the average pixel value of the first channel of each image.
+    Computes the image embeddings for a batch of images.
 
-    This function opens each image from the specified paths, preprocesses them for the model, and computes their embeddings. Additionally, it calculates the average pixel value of the first channel as a simple feature for each image.
+    This function accepts either a list of file paths or a list of PIL Image objects, 
+    preprocesses them for the model, and computes their embeddings.
 
     Args:
-        image_paths (list): List of image paths with length equal to batch_size
+        image_input (list): List of image paths or PIL Image objects with length equal to batch_size
 
     Returns:
         list: A list containing the image embeddings for each image in the batch.
     """
+    if not image_input:
+        return []
+        
     # Use ThreadPoolExecutor to preprocess images in parallel
     with ThreadPoolExecutor() as executor:
-        preprocessed_images = list(executor.map(preprocess_image, image_paths))
+        preprocessed_images = list(executor.map(preprocess_image, image_input))
+        
     # Stack the preprocessed images into a tensor
     images_tensor = torch.stack(preprocessed_images).to(device)
 

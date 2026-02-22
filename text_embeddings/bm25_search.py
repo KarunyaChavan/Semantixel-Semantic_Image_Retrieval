@@ -71,7 +71,7 @@ class BM25TextIndex:
         print(f"✓ BM25 index rebuilt with {len(self.documents)} documents")
         self.save()
     
-    def search(self, query, top_k=5, threshold=0.0):
+    def search(self, query, top_k=5, threshold=0.0, media_type="all"):
         """
         Search for documents matching the query.
         
@@ -79,6 +79,7 @@ class BM25TextIndex:
             query (str): Search query
             top_k (int): Number of top results
             threshold (float): Minimum BM25 score (typically 0.0 for keyword search)
+            media_type (str): Format to filter by ('all', 'image', 'video')
         
         Returns:
             list: Doc IDs sorted by relevance score
@@ -92,12 +93,17 @@ class BM25TextIndex:
         # Get BM25 scores
         scores = self.bm25.get_scores(tokens)
         
-        # Filter by threshold and sort
-        results = [
-            (self.doc_ids[i], scores[i]) 
-            for i in range(len(scores)) 
-            if scores[i] > threshold
-        ]
+        # Filter by threshold, sort and filter by media type
+        results = []
+        for i in range(len(scores)):
+            if scores[i] > threshold:
+                doc_id = self.doc_ids[i]
+                if media_type == "image" and ":::" in doc_id:
+                    continue
+                if media_type == "video" and ":::" not in doc_id:
+                    continue
+                results.append((doc_id, scores[i]))
+                
         results.sort(key=lambda x: x[1], reverse=True)
         
         # Return top-k doc IDs

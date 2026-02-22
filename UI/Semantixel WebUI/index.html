@@ -12,8 +12,7 @@
 
 <body onload="initializeUI()">
     <div style="display: flex; justify-content: center; margin: 8px">
-        <img src="Semantixel WebUI/assets/logo_text.png" alt="Semantixel Logo"
-            style="height: 70px;">
+        <img src="Semantixel WebUI/assets/logo_text.png" alt="Semantixel Logo" style="height: 70px;">
     </div>
     <div class="container">
         <div class="search-bar">
@@ -42,6 +41,15 @@
                 </button>
             </div>
             <div class="search-option">
+                <label for="media-type">Media Type:</label>
+                <select id="media-type" class="modern-select"
+                    style="width: auto; padding: 8px 30px 8px 15px; font-size: 14px;">
+                    <option value="all">All Media</option>
+                    <option value="image">Images Only</option>
+                    <option value="video">Videos Only</option>
+                </select>
+            </div>
+            <div class="search-option">
                 <button class="help-btn-main" onclick="showHelp('modes')" title="Learn about search modes">
                     <i class="fas fa-info-circle"></i> Search Guide
                 </button>
@@ -51,7 +59,7 @@
         <div class="results" id="results"></div>
     </div>
     <div class="enlarged-img" id="enlarged-img-container"></div>
-    
+
     <!-- Image Path Display Panel -->
     <div class="image-path-panel" id="image-path-panel" style="display: none;">
         <div class="path-header">
@@ -78,7 +86,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Help Modal -->
     <div class="modal" id="help-modal" style="display: none;">
         <div class="modal-content">
@@ -93,7 +101,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- <footer style="margin-top: 20px; text-align: center;">
         <p> <i class="fab fa-github"></i>
             <a href="https://github.com/KarunyaChavan/Semantixel-Semantic_Image_Retrieval">
@@ -121,7 +129,7 @@
             // Also clear previous results and enlarged image
             document.getElementById('results').innerHTML = '';
             document.getElementById('enlarged-img-container').innerHTML = '';
-            
+
             // Close image path panel if open
             document.getElementById('image-path-panel').style.display = 'none';
 
@@ -141,7 +149,7 @@
                 thresholdValue.textContent = 0.1;
                 topK.value = 3;
             }
-            
+
             // Update the threshold slider background
             const percent = (threshold.value - threshold.min) / (threshold.max - threshold.min) * 100;
             threshold.style.background = `linear-gradient(to right, #007bff 0%, #007bff ${percent}%, var(--input-background-color) ${percent}%, var(--input-background-color) 100%)`;
@@ -152,6 +160,7 @@
             const route = document.getElementById('route-select').value;
             const threshold = parseFloat(document.getElementById('threshold').value);
             const topK = parseInt(document.getElementById('top-k').value);
+            const mediaType = document.getElementById('media-type').value;
             const port = window.location.port || 8080;  // Default to 8080 if no port is specified
             const url = `http://${window.location.hostname}:${port}/${route}`;
             const loader = document.getElementById('loader');
@@ -167,21 +176,50 @@
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ query: query, threshold: threshold, top_k: topK })
+                body: JSON.stringify({ query: query, threshold: threshold, top_k: topK, media_type: mediaType })
             })
                 .then(response => response.json())
                 .then(data => {
                     loader.style.display = 'none';
-                    data.forEach(path => {
-                        const img = document.createElement('img');
-                        img.src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(path)}`;
-                        img.dataset.originalPath = path; // Store original path
-                        img.onclick = () => {
-                            displayEnlargedImage(img.src);
-                            highlightSelectedImage(img);
-                            showImagePath(path);
-                        };
-                        resultsDiv.appendChild(img);
+                    data.forEach(item => {
+                        let resultElement;
+
+                        if (item.type === 'video') {
+                            resultElement = document.createElement('div');
+                            resultElement.className = 'video-container';
+                            resultElement.dataset.originalPath = item.path; // Store original path
+
+                            const video = document.createElement('video');
+                            // Start video at the extracted timestamp
+                            video.src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(item.path)}#t=${item.timestamp}`;
+                            video.controls = true;
+                            video.preload = "metadata";
+
+                            // A simple timestamp badge for the UI
+                            const badge = document.createElement('div');
+                            badge.className = 'timestamp-badge';
+                            badge.textContent = `Match at ${item.timestamp.toFixed(1)}s`;
+
+                            resultElement.appendChild(video);
+                            resultElement.appendChild(badge);
+
+                            resultElement.onclick = () => {
+                                displayEnlargedVideo(video.src);
+                                highlightSelectedImage(resultElement);
+                                showImagePath(item.path);
+                            };
+                        } else {
+                            resultElement = document.createElement('img');
+                            resultElement.src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(item.path)}`;
+                            resultElement.dataset.originalPath = item.path; // Store original path
+                            resultElement.onclick = () => {
+                                displayEnlargedImage(resultElement.src);
+                                highlightSelectedImage(resultElement);
+                                showImagePath(item.path);
+                            };
+                        }
+
+                        resultsDiv.appendChild(resultElement);
                     });
                 })
                 .catch(error => {
@@ -201,12 +239,22 @@
             enlargedImgContainer.appendChild(img);
         }
 
-        function highlightSelectedImage(selectedImg) {
-            const allImages = document.querySelectorAll('.results img');
-            allImages.forEach(img => {
-                img.classList.remove('selected-img');
+        function displayEnlargedVideo(src) {
+            const enlargedImgContainer = document.getElementById('enlarged-img-container');
+            enlargedImgContainer.innerHTML = '';
+            const video = document.createElement('video');
+            video.src = src;
+            video.controls = true;
+            video.autoplay = true;
+            enlargedImgContainer.appendChild(video);
+        }
+
+        function highlightSelectedImage(selectedElement) {
+            const allElements = document.querySelectorAll('.results img, .results .video-container');
+            allElements.forEach(el => {
+                el.classList.remove('selected-img');
             });
-            selectedImg.classList.add('selected-img');
+            selectedElement.classList.add('selected-img');
         }
 
         // Add event listener for Enter key
@@ -224,10 +272,10 @@
         function showImagePath(path) {
             currentImagePath = path;
             currentImageSrc = `http://${window.location.hostname}:${window.location.port || 8080}/images/${encodeURIComponent(path)}`;
-            
+
             document.getElementById('selected-image-path').textContent = path;
             document.getElementById('image-path-panel').style.display = 'block';
-            
+
             // Smooth scroll to panel
             document.getElementById('image-path-panel').scrollIntoView({ behavior: 'smooth' });
         }
@@ -239,18 +287,18 @@
         async function copyImagePath() {
             try {
                 await navigator.clipboard.writeText(currentImagePath);
-                
+
                 // Visual feedback
                 const copyBtn = document.querySelector('.copy-btn');
                 const originalText = copyBtn.innerHTML;
                 copyBtn.innerHTML = '<i class="fas fa-check"></i> Copied!';
                 copyBtn.style.backgroundColor = '#28a745';
-                
+
                 setTimeout(() => {
                     copyBtn.innerHTML = originalText;
                     copyBtn.style.backgroundColor = '';
                 }, 2000);
-                
+
             } catch (err) {
                 // Fallback for older browsers
                 const textArea = document.createElement('textarea');
@@ -259,7 +307,7 @@
                 textArea.select();
                 document.execCommand('copy');
                 document.body.removeChild(textArea);
-                
+
                 alert('Path copied to clipboard!');
             }
         }
@@ -268,14 +316,14 @@
             // For Windows, we'll show the user how to open the location manually
             const path = currentImagePath.replace(/\//g, '\\');
             const folder = path.substring(0, path.lastIndexOf('\\'));
-            
+
             // Create a helpful dialog with instructions
             const message = `File Location:\n${folder}\n\nTo open this location:\n` +
-                           `1. Press Win + R\n` +
-                           `2. Type: explorer "${folder}"\n` +
-                           `3. Press Enter\n\n` +
-                           `Or copy the path below and paste it in File Explorer address bar.`;
-            
+                `1. Press Win + R\n` +
+                `2. Type: explorer "${folder}"\n` +
+                `3. Press Enter\n\n` +
+                `Or copy the path below and paste it in File Explorer address bar.`;
+
             // Copy folder path to clipboard
             navigator.clipboard.writeText(folder).then(() => {
                 alert(message + '\n\n✓ Folder path copied to clipboard!');
@@ -287,7 +335,7 @@
                 textArea.select();
                 document.execCommand('copy');
                 document.body.removeChild(textArea);
-                
+
                 alert(message + '\n\n✓ Folder path copied to clipboard!');
             });
         }
@@ -301,9 +349,9 @@
             const modal = document.getElementById('help-modal');
             const title = document.getElementById('modal-title');
             const body = document.getElementById('modal-body');
-            
+
             let content = '';
-            
+
             if (type === 'threshold') {
                 title.innerHTML = '<i class="fas fa-sliders-h"></i> Threshold Help';
                 content = `
@@ -447,22 +495,22 @@
                     </div>
                 `;
             }
-            
+
             body.innerHTML = content;
             modal.style.display = 'flex';
-            
+
             // Smooth scroll to top of modal
             setTimeout(() => {
                 modal.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }, 100);
         }
-        
+
         function closeHelpModal() {
             document.getElementById('help-modal').style.display = 'none';
         }
-        
+
         // Close modal when clicking outside
-        window.onclick = function(event) {
+        window.onclick = function (event) {
             const modal = document.getElementById('help-modal');
             if (event.target === modal) {
                 closeHelpModal();
@@ -470,7 +518,7 @@
         }
 
         // Update threshold value display
-        document.getElementById('threshold').addEventListener('input', function() {
+        document.getElementById('threshold').addEventListener('input', function () {
             document.getElementById('threshold-value').textContent = this.value;
             const percent = (this.value - this.min) / (this.max - this.min) * 100;
             this.style.background = `linear-gradient(to right, #007bff 0%, #007bff ${percent}%, var(--input-background-color) ${percent}%, var(--input-background-color) 100%)`;

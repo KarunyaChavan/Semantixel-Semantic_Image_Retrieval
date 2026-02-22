@@ -59,28 +59,62 @@ def parse_image(image_path, top_k=5, threshold=0):
         return image_path
 
 
-def search_clip_text(text, image_collection, top_k=5, threshold=0):
+def search_clip_text(text, image_collection, top_k=5, threshold=0, media_type="all"):
     """
     Search for images that are semantically similar to the input text.
 
     Args:
         text (str): The input text to search for.
         image_collection: The collection of images to search in.
+        media_type (str): Filter by media type ('all', 'image', 'video').
 
     Returns:
         tuple: A tuple containing the paths of the top 5 images and their distances from the input text.
     """
     text_embedding = get_clip_text(text)
-    results = image_collection.query(text_embedding, n_results=top_k)
+    
+    # Increase query pool significantly to allow for deduplication of repeated video frames
+    query_k = top_k * 10
+    
+    results = image_collection.query(
+        query_embeddings=text_embedding, 
+        n_results=query_k
+    )
+    
     similarities = [1 - d for d in results["distances"][0]]
-    paths, similarities = [
-        p for p, d in zip(results["ids"][0], similarities) if d > threshold
-    ], [d for d in similarities if d > threshold]
-    return paths, similarities
+    paths = []
+    final_similarities = []
+    video_counts = {}
+    MAX_FRAMES_PER_VIDEO = 1
+    
+    for p, d in zip(results["ids"][0], similarities):
+        if d > threshold:
+            # Apply media_type filter based on composite ID pattern
+            is_video = ":::" in p
+            if media_type == "image" and is_video:
+                continue
+            if media_type == "video" and not is_video:
+                continue
+                
+            # NMS/Deduplication for videos: Limit frames per identical source video
+            if is_video:
+                base_video_path = p.split(":::")[0]
+                current_count = video_counts.get(base_video_path, 0)
+                if current_count >= MAX_FRAMES_PER_VIDEO:
+                    continue  # Skip redundant frame
+                video_counts[base_video_path] = current_count + 1
+                
+            paths.append(p)
+            final_similarities.append(d)
+            
+            if len(paths) >= top_k:
+                break
+                
+    return paths, final_similarities
 
 
 def search_clip_image(
-    image_path, image_collection, top_k=5, threshold=0, get_self=False
+    image_path, image_collection, top_k=5, threshold=0, get_self=False, media_type="all"
 ):
     """
     Search for images that are visually similar to the input image within a given image collection.
@@ -89,22 +123,55 @@ def search_clip_image(
         image_path (str): The path to the input image to search for. This path is stripped of any leading or trailing quotes and adjusted for posix systems.
         image_collection (FaissCollection): The collection of images to search in. This is an object that supports querying for nearest neighbors.
         get_self (bool, optional): If set to True, the function will return the input image as one of the results.
+        media_type (str): Filter by media type ('all', 'image', 'video').
     Returns:
         tuple: A tuple containing two lists. The first list contains the paths of the top 5 images (or top 6 if get_self is True). The second list contains the corresponding distances of these images from the input image.
     """
     image_embedding = get_clip_image([image_path])
-    results = image_collection.query(image_embedding, n_results=top_k)
+    
+    # Increase query pool significantly to allow for deduplication of repeated video frames
+    # Add 1 to account for potentially filtering out the self-image
+    query_k = (top_k * 10) + 1
+        
+    results = image_collection.query(
+        query_embeddings=image_embedding, 
+        n_results=query_k
+    )
+    
     similarities = [1 - d for d in results["distances"][0]]
-    paths, similarities = [
-        p for p, d in zip(results["ids"][0], similarities) if d > threshold
-    ], [d for d in similarities if d > threshold]
-    if not get_self:
-        for i in range(len(paths)):
-            if paths[i] == image_path:
-                paths.pop(i)
-                similarities.pop(i)
+    paths = []
+    final_similarities = []
+    video_counts = {}
+    MAX_FRAMES_PER_VIDEO = 1
+    
+    for p, d in zip(results["ids"][0], similarities):
+        if d > threshold:
+            # Exclude self if requested
+            if not get_self and p == image_path:
+                continue
+                
+            # Apply media_type filter based on composite ID pattern
+            is_video = ":::" in p
+            if media_type == "image" and is_video:
+                continue
+            if media_type == "video" and not is_video:
+                continue
+                
+            # NMS/Deduplication for videos: Limit frames per identical source video
+            if is_video:
+                base_video_path = p.split(":::")[0]
+                current_count = video_counts.get(base_video_path, 0)
+                if current_count >= MAX_FRAMES_PER_VIDEO:
+                    continue  # Skip redundant frame
+                video_counts[base_video_path] = current_count + 1
+                
+            paths.append(p)
+            final_similarities.append(d)
+            
+            if len(paths) >= top_k:
                 break
-    return paths, similarities
+                
+    return paths, final_similarities
 
 
 def search_embed_text(text, text_collection, top_k=5, threshold=0):
@@ -151,10 +218,29 @@ def clip_text_route():
     query = request.json.get("query", "")
     threshold = float(request.json.get("threshold", 0))
     top_k = int(request.json.get("top_k", 5))
-    print(f"threshold: {threshold} top_k: {top_k}")
-    paths, distances = search_clip_text(query, image_collection, top_k, threshold)
+    media_type = request.json.get("media_type", "all")
+    print(f"threshold: {threshold} top_k: {top_k} media_type: {media_type}")
+    paths, distances = search_clip_text(query, image_collection, top_k, threshold, media_type)
     print(len(paths))
-    return jsonify(paths)
+    
+    # Format paths to distinguish between images and video frames
+    formatted_results = []
+    for path in paths:
+        if ":::" in path:
+            video_path, timestamp = path.split(":::")
+            formatted_results.append({
+                "path": video_path,
+                "type": "video",
+                "timestamp": float(timestamp),
+                "composite_id": path
+            })
+        else:
+            formatted_results.append({
+                "path": path,
+                "type": "image"
+            })
+            
+    return jsonify(formatted_results)
 
 
 @app.route("/clip_image", methods=["POST"])
@@ -177,9 +263,28 @@ def clip_image_route():
     query = request.json.get("query", "")
     threshold = float(request.json.get("threshold", 0))
     top_k = int(request.json.get("top_k", 5))
+    media_type = request.json.get("media_type", "all")
     query = parse_image(query)
-    paths, distances = search_clip_image(query, image_collection, top_k, threshold)
-    return jsonify(paths)
+    paths, distances = search_clip_image(query, image_collection, top_k, threshold, False, media_type)
+    
+    # Format paths
+    formatted_results = []
+    for path in paths:
+        if ":::" in path:
+            video_path, timestamp = path.split(":::")
+            formatted_results.append({
+                "path": video_path,
+                "type": "video",
+                "timestamp": float(timestamp),
+                "composite_id": path
+            })
+        else:
+            formatted_results.append({
+                "path": path,
+                "type": "image"
+            })
+            
+    return jsonify(formatted_results)
 
 
 @app.route("/ebmed_text", methods=["POST"])
@@ -201,13 +306,32 @@ def ebmed_text_route():
     query = request.json.get("query", "")
     threshold = float(request.json.get("threshold", 0))
     top_k = int(request.json.get("top_k", 5))
+    media_type = request.json.get("media_type", "all")
     
     if not query:
         return jsonify([])
     
     # Use BM25 keyword search instead of semantic embeddings
-    paths = bm25_index.search(query, top_k=top_k, threshold=threshold)
-    return jsonify(paths)
+    paths = bm25_index.search(query, top_k=top_k, threshold=threshold, media_type=media_type)
+    
+    # Format paths
+    formatted_results = []
+    for path in paths:
+        if ":::" in path:
+            video_path, timestamp = path.split(":::")
+            formatted_results.append({
+                "path": video_path,
+                "type": "video",
+                "timestamp": float(timestamp),
+                "composite_id": path
+            })
+        else:
+            formatted_results.append({
+                "path": path,
+                "type": "image"
+            })
+            
+    return jsonify(formatted_results)
 
 
 @app.route("/face_search", methods=["POST"])

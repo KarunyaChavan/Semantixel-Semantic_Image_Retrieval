@@ -17,19 +17,22 @@ model = ocr_predictor(
 model.to(device)
 
 
-def enhance_image_for_ocr(image_path):
+def enhance_image_for_ocr(image_input):
     """
     Preprocesses image for better OCR detection by enhancing contrast,
     reducing noise, and optimizing brightness.
 
     Args:
-        image_path (str): The path to the image file.
+        image_input (str or PIL.Image): The path to the image file or a PIL Image.
     Returns:
         np.array: The enhanced preprocessed image tensor.
     """
-    # Open image
-    image = Image.open(image_path).convert('RGB')
-    
+    if isinstance(image_input, str):
+        image = Image.open(image_input).convert('RGB')
+    else:
+        # Assume it's already a PIL Image
+        image = image_input.convert('RGB')
+        
     # Step 1: Enhance contrast to make text stand out
     enhancer = ImageEnhance.Contrast(image)
     image = enhancer.enhance(1.5)  # Increase contrast by 50%
@@ -59,16 +62,16 @@ def enhance_image_for_ocr(image_path):
     return image
 
 
-def process_image(image_path):
+def process_image(image_input):
     """
     Opens and preprocesses a single image with enhancement for better OCR.
 
     Args:
-        image_path (str): The path to the image file.
+        image_input (str or PIL.Image): The path to the image file or a PIL Image.
     Returns:
         np.array: The enhanced preprocessed image tensor.
     """
-    return enhance_image_for_ocr(image_path)
+    return enhance_image_for_ocr(image_input)
 
 
 def clean_text(text):
@@ -138,14 +141,14 @@ def process_page(page, OCR_threshold):
     return text
 
 
-def apply_OCR(image_paths, OCR_threshold=0.4):
+def apply_OCR(image_input, OCR_threshold=0.4):
     """
     Applies Optical Character Recognition (OCR) on preprocessed images and returns recognized text.
     
     Images are enhanced for better OCR detection before processing.
 
     Args:
-        image_paths (list of str): The paths to the image files.
+        image_input (list): The list of paths to the image files or PIL Image objects.
         OCR_threshold (float, optional): The confidence threshold for OCR detection. Defaults to 0.4.
                                         Lower values capture more text but may include errors.
                                         Higher values (0.6+) are more conservative.
@@ -154,8 +157,11 @@ def apply_OCR(image_paths, OCR_threshold=0.4):
         list of str or None: The recognized and cleaned text for each image if any text is detected, 
                             otherwise None.
     """
+    if not image_input:
+        return []
+        
     with ThreadPoolExecutor() as executor:
-        images = list(executor.map(process_image, image_paths))
+        images = list(executor.map(process_image, image_input))
     results = model(images)
 
     def process_page_wrapper(page):
