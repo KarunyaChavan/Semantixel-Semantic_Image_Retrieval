@@ -56,11 +56,13 @@ def open_image(image_path):
     Opens an image from the specified file path.
 
     Args:
-        image_path (str): The path to the image file.
+        image_path (str or PIL.Image.Image): The path to the image file, or an already open Image.
 
     Returns:
         Image: An Image object representing the opened image.
     """
+    if isinstance(image_path, Image.Image):
+        return image_path
     image = Image.open(image_path)
     return image
 
@@ -81,12 +83,8 @@ def get_clip_image(image_input):
     if not image_input:
         return []
         
-    if isinstance(image_input[0], str):
-        with ThreadPoolExecutor() as executor:
-            images = list(executor.map(open_image, image_input))
-    else:
-        # Assume it's already a list of PIL Images
-        images = image_input
+    with ThreadPoolExecutor() as executor:
+        images = list(executor.map(open_image, image_input))
         
     processed_image = processor(images=images, return_tensors="pt").to(device)
     with torch.no_grad():

@@ -44,6 +44,7 @@
                     <option value="clip_text">Caption search</option>
                     <option value="ebmed_text">Text content search</option>
                     <option value="clip_image">Similar images search</option>
+                    <option value="video_description">Video search</option>
                 </select>
                 <button onclick="performSearch()" class="search-btn"><i class="fas fa-search"></i> Search</button>
             </div>
@@ -191,6 +192,11 @@
                 threshold.value = 0.1;
                 thresholdValue.textContent = 0.1;
                 topK.value = 3;
+            } else if (select.value == 'video_description') {
+                input.placeholder = 'Describe the video content you are looking for';
+                threshold.value = 0.15;
+                thresholdValue.textContent = 0.15;
+                topK.value = 5;
             }
 
             // Update the threshold slider background
@@ -583,6 +589,24 @@
                                 <strong>Recommended:</strong> Threshold 0.25, Top K 10-15
                             </div>
                         </div>
+
+                        <div class="mode-card">
+                            <div class="mode-header">
+                                <i class="fas fa-film"></i>
+                                <h4>Video Search</h4>
+                                <span class="mode-tag">Frame-Based</span>
+                            </div>
+                            <p><strong>Find videos by describing the content you are looking for.</strong></p>
+                            <div class="examples">
+                                <div class="example-label">Examples:</div>
+                                <span class="example">"scene with a red car"</span>
+                                <span class="example">"person walking outdoors"</span>
+                                <span class="example">"sports action shot"</span>
+                            </div>
+                            <div class="recommended-settings">
+                                <strong>Recommended:</strong> Threshold 0.15-0.25, Top K 5-10
+                            </div>
+                        </div>
                         
                         <div class="quick-tips">
                             <h4><i class="fas fa-rocket"></i> Quick Tips</h4>
@@ -590,6 +614,7 @@
                                 <li>Start with <strong>Caption Search</strong> for natural language queries</li>
                                 <li>Use <strong>Text Content</strong> to find screenshots with specific text</li>
                                 <li>Try <strong>Similar Images</strong> to find duplicates or variations</li>
+                                <li>Use <strong>Video Search</strong> to retrieve videos using natural language descriptions</li>
                                 <li>Lower threshold = More results (but less precise)</li>
                                 <li>Higher threshold = Fewer results (but more accurate)</li>
                             </ul>

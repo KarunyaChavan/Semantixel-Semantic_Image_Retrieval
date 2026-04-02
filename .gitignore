@@ -13,6 +13,11 @@ Index/paths.csv
 #Ignoring VS Code workspace files
 .vscode/
 
+# Ignoring virtual environment
+semantixel_venv/
+venv/
+.venv/
+
 #Ignoring Jupyter Lab files
 .ipynb_checkpoints/
 
@@ -26,3 +31,6 @@ face_data/*
 __pycache__/
 *.pyc
 *.pyo
+
+#Ignoring config files
+config.yaml
