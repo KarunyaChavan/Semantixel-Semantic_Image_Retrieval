@@ -1,61 +1,75 @@
-import subprocess
-import sys
 import argparse
-import shutil
 import os
+import shutil
 import platform
+import sys
+from semantixel.core.config import config
+from semantixel.core.logging import logger
+from semantixel.services.index_service import IndexService
 
-python_executable = sys.executable
+def main():
+    parser = argparse.ArgumentParser(description="Semantixel: Semantic Image Retrieval")
+    parser.add_argument("--settings", action="store_true", help="Open Semantixel settings")
+    parser.add_argument("--delete-index", action="store_true", help="Delete the index (Vector database)")
+    parser.add_argument("--get-index", action="store_true", help="Get the index path")
+    parser.add_argument("--open-config-file", action="store_true", help="Open config.yaml")
+    parser.add_argument("--serve", action="store_true", help="Start the Flask server")
+    parser.add_argument("--scan", action="store_true", help="Perform a full media scan and index update")
+    
+    args = parser.parse_args()
+    
+    # Initialize service only if needed to avoid loading too much
+    index_service = None
 
-def run_script(script_name):
-    result = subprocess.run([python_executable, script_name])
-    if result.returncode != 0:
-        print(f"Error running {script_name}")
-        return False
-    else:
-        print(f"Successfully ran {script_name}")
-        return True
+    if args.settings:
+        import subprocess
+        subprocess.run([sys.executable, "settings.py"])
+        return
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--settings", action="store_true", help="Open Semantixel settings")
-parser.add_argument("--delete-index", action="store_true", help="Delete the index (Vector database)")
-parser.add_argument("--get-index", action="store_true", help="Get the index path")
-parser.add_argument("--open-config-file", action="store_true", help="Open config.yaml")
-parser.add_argument("--encode-faces", action="store_true", help="Encode known faces")
-args = parser.parse_args()
+    if args.delete_index:
+        db_path = config.model_config.get("db_path", "db")
+        if os.path.exists(db_path):
+            shutil.rmtree(db_path)
+            logger.info("Index deleted successfully")
+        else:
+            logger.warning("Index does not exist")
+        return
 
-if args.settings:
-    run_script("settings.py")
-    exit()
+    if args.get_index:
+        db_path = os.path.abspath("db")
+        if os.path.exists(db_path):
+            print(db_path)
+        else:
+            print("Index does not exist")
+        return
 
-if args.delete_index:
-    if os.path.exists("db/"):
-        shutil.rmtree("db/")
-        print("Index deleted successfully")
-    else:
-        print("Index does not exist")
-    exit()
+    if args.open_config_file:
+        config_path = "config.yaml"
+        if platform.system() == "Windows":
+            os.system(f"start {config_path}")
+        elif platform.system() == "Darwin":
+            os.system(f"open {config_path}")
+        else:
+            os.system(f"xdg-open {config_path}")
+        return
 
-if args.get_index:
-    if os.path.exists("db/"):
-        print(os.path.abspath("db/"))
-    else:
-        print("Index does not exist")
-    exit()
+    if args.scan:
+        index_service = IndexService()
+        index_service.run_full_scan()
+        return
 
-if args.open_config_file:
-    if platform.system() == "Windows":
-        os.system("start config.yaml")
-    elif platform.system() == "Darwin":
-        os.system("open config.yaml")
-    else:
-        os.system("xdg-open config.yaml")
-    exit()
+    if args.serve:
+        from wsgi import app
+        app.run(host="0.0.0.0", port=config.port)
+        return
 
-if args.encode_faces:
-    run_script("face_recognition/face_encoder.py")
-    exit()
+    # Default behavior: Sync index and then serve
+    logger.info("Starting Semantixel in default mode (Scan + Serve)")
+    index_service = IndexService()
+    index_service.run_full_scan()
+    
+    from wsgi import app
+    app.run(host="0.0.0.0", port=config.port)
 
-# Default behavior – create index and start server
-run_script("create_index.py")
-run_script("server.py")
+if __name__ == "__main__":
+    main()

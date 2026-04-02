@@ -1,10 +1,7 @@
 import cv2
 from PIL import Image
 import os
-import logging
-
-# Setup a logger for developer debugging
-logger = logging.getLogger(__name__)
+from semantixel.core.logging import logger
 
 def get_histogram(frame):
     """Calculates and normalizes the HSV histogram for a given frame."""
@@ -32,13 +29,13 @@ def extract_frames_in_memory(video_path, fps=1.0, similarity_threshold=0.3):
     Yields dicts with 'image' (PIL.Image) and 'timestamp' (float).
     """
     if not os.path.exists(video_path):
-        print(f"Error: Video file not found at {video_path}")
+        logger.error(f"Video file not found at {video_path}")
         return
         
     cap = cv2.VideoCapture(video_path)
     
     if not cap.isOpened():
-        print(f"Error: Could not open video file {video_path}")
+        logger.error(f"Could not open video file {video_path}")
         return
         
     video_fps = cap.get(cv2.CAP_PROP_FPS)
@@ -94,7 +91,6 @@ def extract_frames_in_memory(video_path, fps=1.0, similarity_threshold=0.3):
             
             current_sec += 1.0 / fps
     finally:
-        # Safely log statistics and explicitly release capture when the generator closes
         total_checked = frames_yielded + frames_skipped
         if total_checked > 0:
             logger.debug(f"[Video Indexed] {os.path.basename(video_path)} | Kept: {frames_yielded} frames | Skipped: {frames_skipped} redundant frames")

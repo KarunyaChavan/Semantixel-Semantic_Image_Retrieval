@@ -26,3 +26,6 @@ rank-bm25==0.2.2
 ftfy==6.3.1
 regex==2024.11.6
 scikit-learn==1.7.1
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+gunicorn==23.0.0
