@@ -48,6 +48,28 @@ logger.addHandler(handler)
 image_collection, text_collection = create_vectordb("db")
 bm25_index = BM25TextIndex()  # Load BM25 index for keyword search
 
+def format_media_results(paths):
+    formatted_results = []
+    for path in paths:
+        if ":::" in path:
+            video_path, timestamp = path.split(":::")
+            formatted_results.append(
+                {
+                    "path": video_path,
+                    "type": "video",
+                    "timestamp": float(timestamp),
+                    "composite_id": path,
+                }
+            )
+        else:
+            extension = os.path.splitext(path)[1].lower()
+            media_type = (
+                "audio"
+                if extension in {".wav", ".aiff", ".aif", ".aifc", ".au"}
+                else "image"
+            )
+            formatted_results.append({"path": path, "type": media_type})
+    return formatted_results
 
 def parse_image(image_path, top_k=5, threshold=0):
     """
@@ -77,85 +99,8 @@ def parse_image(image_path, top_k=5, threshold=0):
         return image_path
 
 
-def search_clip_text(text, image_collection, top_k=5, threshold=0, media_type="all"):
-    """
-    Search for images that are semantically similar to the input text.
-
-    Args:
-        text (str): The input text to search for.
-        image_collection: The collection of images to search in.
-        media_type (str): Filter by media type ('all', 'image', 'video').
-
-    Returns:
-        tuple: A tuple containing the paths of the top 5 images and their distances from the input text.
-    """
-    text_embedding = get_clip_text(text)
-    
-    # Increase query pool significantly to allow for deduplication of repeated video frames
-    query_k = top_k * 10
-    
-    results = image_collection.query(
-        query_embeddings=text_embedding, 
-        n_results=query_k
-    )
-    
-    similarities = [1 - d for d in results["distances"][0]]
-    paths = []
-    final_similarities = []
-    video_counts = {}
-    MAX_FRAMES_PER_VIDEO = 1
-    
-    for p, d in zip(results["ids"][0], similarities):
-        if d > threshold:
-            # Apply media_type filter based on composite ID pattern
-            is_video = ":::" in p
-            if media_type == "image" and is_video:
-                continue
-            if media_type == "video" and not is_video:
-                continue
-                
-            # NMS/Deduplication for videos: Limit frames per identical source video
-            if is_video:
-                base_video_path = p.split(":::")[0]
-                current_count = video_counts.get(base_video_path, 0)
-                if current_count >= MAX_FRAMES_PER_VIDEO:
-                    continue  # Skip redundant frame
-                video_counts[base_video_path] = current_count + 1
-                
-            paths.append(p)
-            final_similarities.append(d)
-            
-            if len(paths) >= top_k:
-                break
-                
-    return paths, final_similarities
-
-
-def search_clip_image(
-    image_path, image_collection, top_k=5, threshold=0, get_self=False, media_type="all"
-):
-    """
-    Search for images that are visually similar to the input image within a given image collection.
-
-    Args:
-        image_path (str): The path to the input image to search for. This path is stripped of any leading or trailing quotes and adjusted for posix systems.
-        image_collection (FaissCollection): The collection of images to search in. This is an object that supports querying for nearest neighbors.
-        get_self (bool, optional): If set to True, the function will return the input image as one of the results.
-        media_type (str): Filter by media type ('all', 'image', 'video').
-    Returns:
-        tuple: A tuple containing two lists. The first list contains the paths of the top 5 images (or top 6 if get_self is True). The second list contains the corresponding distances of these images from the input image.
-    """
-    image_embedding = get_clip_image([image_path])
-    
-    # Increase query pool significantly to allow for deduplication of repeated video frames
-    # Add 1 to account for potentially filtering out the self-image
-    query_k = (top_k * 10) + 1
-        
-    results = image_collection.query(
-        query_embeddings=image_embedding, 
-        n_results=query_k
-    )
-    
+def filter_search_results(results, threshold, top_k, media_type, get_self=True, image_path=None):
+    """Helper method to filter results, apply NMS for video frames, and enforce media_type restrictions"""
     similarities = [1 - d for d in results["distances"][0]]
     paths = []
     final_similarities = []
@@ -190,6 +135,58 @@ def search_clip_image(
                 break
                 
     return paths, final_similarities
+
+def search_clip_text(text, image_collection, top_k=5, threshold=0, media_type="all"):
+    """
+    Search for images that are semantically similar to the input text.
+
+    Args:
+        text (str): The input text to search for.
+        image_collection: The collection of images to search in.
+        media_type (str): Filter by media type ('all', 'image', 'video').
+
+    Returns:
+        tuple: A tuple containing the paths of the top 5 images and their distances from the input text.
+    """
+    text_embedding = get_clip_text(text)
+    
+    # Increase query pool significantly to allow for deduplication of repeated video frames
+    query_k = top_k * 10
+    
+    results = image_collection.query(
+        query_embeddings=text_embedding, 
+        n_results=query_k
+    )
+    
+    return filter_search_results(results, threshold, top_k, media_type)
+
+
+def search_clip_image(
+    image_path, image_collection, top_k=5, threshold=0, get_self=False, media_type="all"
+):
+    """
+    Search for images that are visually similar to the input image within a given image collection.
+
+    Args:
+        image_path (str): The path to the input image to search for. This path is stripped of any leading or trailing quotes and adjusted for posix systems.
+        image_collection (FaissCollection): The collection of images to search in. This is an object that supports querying for nearest neighbors.
+        get_self (bool, optional): If set to True, the function will return the input image as one of the results.
+        media_type (str): Filter by media type ('all', 'image', 'video').
+    Returns:
+        tuple: A tuple containing two lists. The first list contains the paths of the top 5 images (or top 6 if get_self is True). The second list contains the corresponding distances of these images from the input image.
+    """
+    image_embedding = get_clip_image([image_path])
+    
+    # Increase query pool significantly to allow for deduplication of repeated video frames
+    # Add 1 to account for potentially filtering out the self-image
+    query_k = (top_k * 10) + 1
+        
+    results = image_collection.query(
+        query_embeddings=image_embedding, 
+        n_results=query_k
+    )
+    
+    return filter_search_results(results, threshold, top_k, media_type, get_self, image_path)
 
 
 def search_embed_text(text, text_collection, top_k=5, threshold=0):
@@ -228,7 +225,7 @@ def process_search_results(paths):
                 "path": path,
                 "type": "image"
             })
-    return formatted_results
+    return format_media_results(paths)
 
 # Flask App
 app = Flask(__name__, static_folder="UI/Semantixel WebUI")
@@ -275,8 +272,8 @@ def clip_text_route():
                 "path": path,
                 "type": "image"
             })
-            
-    return jsonify(formatted_results)
+ 
+    return jsonify(process_search_results(paths))
 
 
 @app.route("/clip_image", methods=["POST"])
@@ -319,8 +316,8 @@ def clip_image_route():
                 "path": path,
                 "type": "image"
             })
-            
-    return jsonify(formatted_results)
+ 
+    return jsonify(process_search_results(paths))
 
 
 @app.route("/ebmed_text", methods=["POST"])
@@ -368,8 +365,8 @@ def ebmed_text_route():
                     "path": path,
                     "type": "image"
                 })
-                
-        return jsonify(formatted_results)
+ 
+        return jsonify(process_search_results(paths))
     except Exception as e:
         logger.error(f"Error in ebmed_text route: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
@@ -597,6 +594,10 @@ def serve_image(filename):
     filename = os.path.join("/", filename)
     return send_from_directory(os.path.dirname(filename), os.path.basename(filename))
 
+@app.route("/media/path:filename")
+def serve_media(filename):
+    filename = os.path.join("/", filename)
+    return send_from_directory(os.path.dirname(filename), os.path.basename(filename))
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 23107))

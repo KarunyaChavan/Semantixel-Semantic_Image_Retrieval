@@ -139,18 +139,18 @@ def index_images(image_collection, text_collection):
                 if is_video:
                     from Index.video_utils import extract_frames_in_memory
                     # Extract frames dynamically via the generator stream
-                    for frame_data in extract_frames_in_memory(path, fps=1.0, similarity_threshold=0.3):
+                    for frame_data in extract_frames_in_memory(path, fps=1.0):
                         processing_inputs.append(frame_data["image"])
                         composite_id = f"{path}:::{frame_data['timestamp']}"
                         processing_ids.append(composite_id)
-                        processing_metadatas.append({"average": 0, "source_video": path, "timestamp": frame_data['timestamp'], "type": "video_frame"})
+                        processing_metadatas.append({"source_video": path})
                         
                         if len(processing_inputs) >= batch_size:
                             flush_batch()
                 else:
                     processing_inputs.append(path)
                     processing_ids.append(path)
-                    processing_metadatas.append({"average": averages[paths.index(path)], "type": "image"})
+                    processing_metadatas.append({"average": averages[paths.index(path)]})
                     
                     if len(processing_inputs) >= batch_size:
                         flush_batch()

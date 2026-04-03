@@ -106,8 +106,26 @@ class BM25TextIndex:
                 
         results.sort(key=lambda x: x[1], reverse=True)
         
-        # Return top-k doc IDs
-        return [doc_id for doc_id, score in results[:top_k]]
+        # Return top-k doc IDs with deduplication for video frames
+        final_doc_ids = []
+        video_counts = {}
+        MAX_FRAMES_PER_VIDEO = 1
+        
+        for doc_id, score in results:
+            # Deduplicate video frames based on base path
+            if ":::" in doc_id:
+                base_video_path = doc_id.split(":::")[0]
+                current_count = video_counts.get(base_video_path, 0)
+                if current_count >= MAX_FRAMES_PER_VIDEO:
+                    continue
+                video_counts[base_video_path] = current_count + 1
+                
+            final_doc_ids.append(doc_id)
+            
+            if len(final_doc_ids) >= top_k:
+                break
+                
+        return final_doc_ids
     
     def save(self):
         """Persist index to disk"""
