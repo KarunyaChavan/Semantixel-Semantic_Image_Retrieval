@@ -1,7 +1,6 @@
 import chromadb
 from tqdm import tqdm
 import os
-import sys
 import yaml
 from Index.scan import read_from_csv
 from text_embeddings.bm25_search import BM25TextIndex
@@ -65,11 +64,12 @@ def create_vectordb(path):
 
 def index_images(image_collection, text_collection):
     """
-    Index images in the database.
+    Index images and extract video frames in the database.
 
-    This function iterates over all image paths, checks if already indexed,
-    and creates embeddings for both visual and text content. Text is indexed
-    using both semantic embeddings (Chroma) and BM25 keyword search.
+    This function iterates over all image/video paths. For images, it processes them normally.
+    For videos, it extracts frames in memory, generating a composite ID like `video.mp4:::timestamp`,
+    and creates embeddings for both visual and text content. 
+    Text is indexed using both semantic embeddings (Chroma) and BM25 keyword search.
 
     Args:
         image_collection (Collection): The image collection in the database.
@@ -78,55 +78,87 @@ def index_images(image_collection, text_collection):
     paths, averages = read_from_csv("paths.csv")
     bm25_index = BM25TextIndex()
     
-    with tqdm(total=len(paths), desc="Indexing images") as pbar:
-        for i in range(0, len(paths), batch_size):
-            batch_paths = paths[i : i + batch_size]
-            to_process = []
+    video_extensions = {".mp4", ".mkv", ".avi", ".mov"}
+    
+    with tqdm(total=len(paths), desc="Indexing media") as pbar:
+        processing_inputs = []
+        processing_ids = []
+        processing_metadatas = []
+        
+        def flush_batch():
+            if not processing_inputs:
+                return
+            
+            # Process CLIP embeddings in batch
+            image_embeddings = get_clip_image(processing_inputs)
 
-            for path in batch_paths:
+            # Perform batch upsert for image collection
+            image_collection.upsert(
+                ids=processing_ids,
+                embeddings=image_embeddings,
+                metadatas=processing_metadatas,
+            )
+            ocr_texts = apply_OCR(processing_inputs)
+
+            # Process OCR and text embeddings individually
+            for idx in range(len(processing_inputs)):
+                current_id = processing_ids[idx]
+                if ocr_texts[idx] is not None:
+                    # Add to semantic embeddings (Chroma)
+                    text_embeddings = get_text_embeddings(ocr_texts[idx])
+                    text_collection.upsert(
+                        ids=[current_id], embeddings=[text_embeddings],
+                        metadatas=[processing_metadatas[idx]]
+                    )
+                    
+                    # Add to BM25 index (keyword search)
+                    bm25_index.add_document(current_id, ocr_texts[idx])
+                    
+            processing_inputs.clear()
+            processing_ids.clear()
+            processing_metadatas.clear()
+
+        for path in paths:
+            is_video = path.lower().endswith(tuple(video_extensions))
+            needs_indexing = False
+            
+            if is_video:
+                results = image_collection.get(where={"source_video": path})
+                if len(results["ids"]) == 0:
+                    needs_indexing = True
+            else:
                 if len(image_collection.get(ids=[path])["ids"]) > 0:
                     if deep_scan:
-                        # Check if the average pixel value has changed
-                        average = image_collection.get(ids=[path])["metadatas"][0][
-                            "average"
-                        ]
+                        average = image_collection.get(ids=[path])["metadatas"][0]["average"]
                         if average != averages[paths.index(path)]:
-                            to_process.append(path)
+                            needs_indexing = True
                 else:
-                    to_process.append(path)
+                    needs_indexing = True
 
-            if to_process:
-                # Process CLIP embeddings in batch
-                image_embeddings = get_clip_image(to_process)
-
-                # Prepare data for batch upsert
-                upsert_ids = to_process
-                upsert_embeddings = image_embeddings
-                upsert_metadatas = [
-                    {"average": averages[paths.index(path)]} for path in to_process
-                ]
-
-                # Perform batch upsert for image collection
-                image_collection.upsert(
-                    ids=upsert_ids,
-                    embeddings=upsert_embeddings,
-                    metadatas=upsert_metadatas,
-                )
-                ocr_texts = apply_OCR(to_process)
-
-                # Process OCR and text embeddings individually
-                for i in range(len(to_process)):
-                    if ocr_texts[i] is not None:
-                        # Add to semantic embeddings (Chroma)
-                        text_embeddings = get_text_embeddings(ocr_texts[i])
-                        text_collection.upsert(
-                            ids=[to_process[i]], embeddings=[text_embeddings]
-                        )
+            if needs_indexing:
+                if is_video:
+                    from Index.video_utils import extract_frames_in_memory
+                    # Extract frames dynamically via the generator stream
+                    for frame_data in extract_frames_in_memory(path, fps=1.0):
+                        processing_inputs.append(frame_data["image"])
+                        composite_id = f"{path}:::{frame_data['timestamp']}"
+                        processing_ids.append(composite_id)
+                        processing_metadatas.append({"source_video": path})
                         
-                        # Add to BM25 index (keyword search)
-                        bm25_index.add_document(to_process[i], ocr_texts[i])
-
-            pbar.update(min(batch_size, len(paths) - i))
+                        if len(processing_inputs) >= batch_size:
+                            flush_batch()
+                else:
+                    processing_inputs.append(path)
+                    processing_ids.append(path)
+                    processing_metadatas.append({"average": averages[paths.index(path)]})
+                    
+                    if len(processing_inputs) >= batch_size:
+                        flush_batch()
+                        
+            pbar.update(1)
+            
+        # Final flush for any remaining components
+        flush_batch()
     
     # Rebuild and save BM25 index
     bm25_index.rebuild_index()
@@ -137,7 +169,9 @@ def clean_index(image_collection, text_collection, verbose=False):
     Clean up the database.
 
     This function iterates over all IDs in the image collection, and for each ID, it checks if the ID is in
-    the list of original image paths. If not, it deletes the ID from the image collection and the text collection.
+    the list of original image paths. For video frames (IDs spanning composite format `path:::timestamp`), 
+    it will check if the source video path is still valid.
+    If not, it deletes the ID from the image collection and the text collection.
 
     Args:
         paths (list): The list of original image paths. These paths are used as IDs in the
@@ -145,7 +179,7 @@ def clean_index(image_collection, text_collection, verbose=False):
         image_collection (Collection): The image collection in the database.
         text_collection (Collection): The text collection in the database.
     """
-    paths, averages = read_from_csv("paths.csv")
+    paths, _ = read_from_csv("paths.csv")
     all_image_ids = image_collection.get()["ids"]
     all_text_ids = text_collection.get()["ids"]
     
@@ -154,7 +188,11 @@ def clean_index(image_collection, text_collection, verbose=False):
         total=len(all_image_ids),
         desc="Cleaning up database",
     ):
-        if id not in paths:
+        
+        # Determine the base path (for images: id, for video frames: split by ':::')
+        base_path = id.split(":::")[0] if ":::" in id else id
+        
+        if base_path not in paths:
             # Check if ID exists in image collection before deletion
             if id in all_image_ids:
                 if verbose:

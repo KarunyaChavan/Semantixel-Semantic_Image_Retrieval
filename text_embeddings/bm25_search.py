@@ -71,7 +71,7 @@ class BM25TextIndex:
         print(f"✓ BM25 index rebuilt with {len(self.documents)} documents")
         self.save()
     
-    def search(self, query, top_k=5, threshold=0.0):
+    def search(self, query, top_k=5, threshold=0.0, media_type="all"):
         """
         Search for documents matching the query.
         
@@ -79,6 +79,7 @@ class BM25TextIndex:
             query (str): Search query
             top_k (int): Number of top results
             threshold (float): Minimum BM25 score (typically 0.0 for keyword search)
+            media_type (str): Format to filter by ('all', 'image', 'video')
         
         Returns:
             list: Doc IDs sorted by relevance score
@@ -92,16 +93,39 @@ class BM25TextIndex:
         # Get BM25 scores
         scores = self.bm25.get_scores(tokens)
         
-        # Filter by threshold and sort
-        results = [
-            (self.doc_ids[i], scores[i]) 
-            for i in range(len(scores)) 
-            if scores[i] > threshold
-        ]
+        # Filter by threshold, sort and filter by media type
+        results = []
+        for i in range(len(scores)):
+            if scores[i] > threshold:
+                doc_id = self.doc_ids[i]
+                if media_type == "image" and ":::" in doc_id:
+                    continue
+                if media_type == "video" and ":::" not in doc_id:
+                    continue
+                results.append((doc_id, scores[i]))
+                
         results.sort(key=lambda x: x[1], reverse=True)
         
-        # Return top-k doc IDs
-        return [doc_id for doc_id, score in results[:top_k]]
+        # Return top-k doc IDs with deduplication for video frames
+        final_doc_ids = []
+        video_counts = {}
+        MAX_FRAMES_PER_VIDEO = 1
+        
+        for doc_id, score in results:
+            # Deduplicate video frames based on base path
+            if ":::" in doc_id:
+                base_video_path = doc_id.split(":::")[0]
+                current_count = video_counts.get(base_video_path, 0)
+                if current_count >= MAX_FRAMES_PER_VIDEO:
+                    continue
+                video_counts[base_video_path] = current_count + 1
+                
+            final_doc_ids.append(doc_id)
+            
+            if len(final_doc_ids) >= top_k:
+                break
+                
+        return final_doc_ids
     
     def save(self):
         """Persist index to disk"""

@@ -56,29 +56,36 @@ def open_image(image_path):
     Opens an image from the specified file path.
 
     Args:
-        image_path (str): The path to the image file.
+        image_path (str or PIL.Image.Image): The path to the image file, or an already open Image.
 
     Returns:
         Image: An Image object representing the opened image.
     """
+    if isinstance(image_path, Image.Image):
+        return image_path
     image = Image.open(image_path)
     return image
 
 
-def get_clip_image(image_paths):
+def get_clip_image(image_input):
     """
-    Computes the image embeddings for a batch of images and calculates the average pixel value of the first channel of each image.
+    Computes the image embeddings for a batch of images.
 
-    This function opens each image from the specified paths, preprocesses them for the model, and computes their embeddings. Additionally, it calculates the average pixel value of the first channel as a simple feature for each image.
+    This function accepts either a list of file paths or a list of PIL Image objects, 
+    preprocesses them for the model, and computes their embeddings.
 
     Args:
-        image_paths (list): List of image paths with length equal to batch_size
+        image_input (list): List of image paths or PIL Image objects with length equal to batch_size
 
     Returns:
         list: A list containing the image embeddings for each image in the batch.
     """
+    if not image_input:
+        return []
+        
     with ThreadPoolExecutor() as executor:
-        images = list(executor.map(open_image, image_paths))
+        images = list(executor.map(open_image, image_input))
+        
     processed_image = processor(images=images, return_tensors="pt").to(device)
     with torch.no_grad():
         image_features = model.get_image_features(**processed_image)

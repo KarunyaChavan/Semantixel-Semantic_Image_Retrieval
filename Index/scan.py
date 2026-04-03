@@ -1,4 +1,4 @@
-from Index.scan_default import fast_scan_for_images
+from Index.scan_default import fast_scan_for_media
 from concurrent.futures import ThreadPoolExecutor
 import yaml, csv
 from tqdm import tqdm
@@ -6,6 +6,13 @@ from PIL import Image
 
 
 def process_image(path):
+    video_extensions = {".mp4", ".mkv", ".avi", ".mov"}
+    if path.lower().endswith(tuple(video_extensions)):
+        # For videos, return 0 as the average to avoid PIL error. 
+        # Deep scan changes detection will just rely on file existence for videos,
+        # or we could hash the video, but this is simple and fast.
+        return (path, 0)
+
     try:
         with Image.open(path) as img:
             try:
@@ -95,7 +102,7 @@ def scan_and_save():
                 include_dirs = None
                 print("No directories to include")
                 return False
-            paths, _ = fast_scan_for_images(include_dirs, exclude_dirs)
+            paths, _ = fast_scan_for_media(include_dirs, exclude_dirs)
         elif config["scan_method"] == "Everything":
             from Index.scan_EverythingSDK import search_EverythingSDK
 
