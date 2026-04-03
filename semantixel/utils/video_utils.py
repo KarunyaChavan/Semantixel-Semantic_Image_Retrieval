@@ -21,7 +21,7 @@ def calculate_histogram_difference(hist1, hist2):
         return 1.0
     return cv2.compareHist(hist1, hist2, cv2.HISTCMP_BHATTACHARYYA)
 
-def extract_frames_in_memory(video_path, fps=1.0, similarity_threshold=0.3):
+def extract_frames_in_memory(video_path, fps=0.5, similarity_threshold=0.6):
     """
     Extracts frames from a video file at a specified frame rate (fps) using a generator.
     Includes scene detection to drop redundant frames based on a similarity threshold.
