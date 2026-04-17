@@ -2,7 +2,8 @@ import torch
 import torch.nn.functional as F
 import time
 import os
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Optional
+from semantixel.media import parse_media_id
 from semantixel.services.model_manager import model_manager
 from semantixel.services.index_service import IndexService
 from semantixel.services.face_service import FaceService
@@ -17,24 +18,38 @@ class SearchService:
         self.index_service = index_service
         self.face_service = face_service
         self.image_collection = index_service.image_collection
-        self.text_collection = index_service.text_collection
         self.bm25_service = index_service.bm25_service
 
-    def _process_item_id(self, item_id: str) -> Dict[str, Any]:
+    def _process_item_id(self, item_id: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Format an ID to JSON results."""
-        if ":::" in item_id:
-            video_path, timestamp = item_id.split(":::")
-            return {
-                "path": video_path,
-                "type": "video",
-                "timestamp": float(timestamp),
-                "composite_id": item_id
+        if metadata and (
+            metadata.get("locator")
+            or metadata.get("display_path")
+            or metadata.get("source_media_id")
+            or metadata.get("source")
+        ):
+            result = {
+                "media_id": metadata.get("source_media_id") or item_id,
+                "source": metadata.get("source", "local"),
+                "path": metadata.get("display_path") or metadata.get("locator") or item_id,
+                "display_path": metadata.get("display_path") or metadata.get("locator") or item_id,
+                "type": "video" if metadata.get("type") == "video_frame" else metadata.get("type", "image"),
+                "locator": metadata.get("locator", item_id),
+                "composite_id": item_id,
             }
-        else:
-            return {
-                "path": item_id,
-                "type": "image"
-            }
+            if metadata.get("timestamp") is not None:
+                result["timestamp"] = float(metadata["timestamp"])
+            return result
+
+        return parse_media_id(item_id).to_result()
+
+    def _resolve_query_media(self, query: str):
+        media = parse_media_id(query)
+        if media.source == "local":
+            return media, media.locator
+        if media.source == self.index_service.google_drive_source.SOURCE_NAME:
+            return media, self.index_service.google_drive_source.fetch_image(media.locator)
+        raise ValueError(f"Unsupported query media source: {media.source}")
 
     def semantic_text_search(self, query: str, top_k: int = 5, threshold: float = 0.0, media_type: str = "image") -> List[Dict[str, Any]]:
         """
@@ -47,60 +62,78 @@ class SearchService:
         query_k = top_k * 10
         results = self.image_collection.query(
             query_embeddings=[text_embedding],
-            n_results=query_k
+            n_results=query_k,
+            include=["distances", "metadatas"],
         )
         
         return self._filter_results(results, top_k, threshold, media_type)
 
     def semantic_image_search(self, image_path: str, top_k: int = 5, threshold: float = 0.0, media_type: str = "all") -> List[Dict[str, Any]]:
         """CLIP Image similarity search."""
-        embedding = model_manager.clip.get_image_embeddings([image_path])[0]
+        query_media, query_input = self._resolve_query_media(image_path)
+        embedding = model_manager.clip.get_image_embeddings([query_input])[0]
         
         query_k = top_k * 10
         results = self.image_collection.query(
             query_embeddings=[embedding],
-            n_results=query_k
+            n_results=query_k,
+            include=["distances", "metadatas"],
         )
         
         # Exclude self if top result is remarkably similar
-        return self._filter_results(results, top_k, threshold, media_type, exclude_path=image_path)
+        return self._filter_results(results, top_k, threshold, media_type, exclude_path=query_media.media_id)
 
     def keyword_search(self, query: str, top_k: int = 5, threshold: float = 0.0, media_type: str = "all") -> List[Dict[str, Any]]:
         """BM25 search."""
         ids = self.bm25_service.search(query, top_k, threshold, media_type)
-        return [self._process_item_id(id) for id in ids]
+        if not ids:
+            return []
+
+        metadata_lookup = {}
+        try:
+            collection_data = self.image_collection.get(ids=ids, include=["metadatas"])
+            for item_id, metadata in zip(collection_data["ids"], collection_data.get("metadatas") or []):
+                metadata_lookup[item_id] = metadata
+        except Exception:
+            metadata_lookup = {}
+
+        return [self._process_item_id(item_id, metadata_lookup.get(item_id)) for item_id in ids]
 
     def _filter_results(self, results: Dict[str, Any], top_k: int, threshold: float, media_type: str, exclude_path: Optional[str] = None) -> List[Dict[str, Any]]:
         """Filtering and deduplication (limit frames per video)."""
-        paths = results["ids"][0]
+        ids = results["ids"][0]
         distances = results["distances"][0]
+        metadatas = results.get("metadatas", [[]])[0]
+        if len(metadatas) != len(ids):
+            metadatas = [None] * len(ids)
         
         similarities = [1 - d for d in distances]
         final_results = []
         video_counts = {}
         MAX_FRAMES_PER_VIDEO = 1
         
-        for p, s in zip(paths, similarities):
+        for item_id, s, metadata in zip(ids, similarities, metadatas):
             if s <= threshold:
                 continue
                 
-            if exclude_path and p == exclude_path:
+            if exclude_path and item_id == exclude_path:
                 continue
                 
-            is_video = ":::" in p
+            item = self._process_item_id(item_id, metadata)
+            is_video = item["type"] == "video"
             if media_type == "image" and is_video:
                 continue
             if media_type == "video" and not is_video:
                 continue
                 
             if is_video:
-                base_video_path = p.split(":::")[0]
+                base_video_path = item["media_id"]
                 count = video_counts.get(base_video_path, 0)
                 if count >= MAX_FRAMES_PER_VIDEO:
                     continue
                 video_counts[base_video_path] = count + 1
             
-            final_results.append(self._process_item_id(p))
+            final_results.append(item)
             
             if len(final_results) >= top_k:
                 break
@@ -110,7 +143,7 @@ class SearchService:
     def generate_graph_data(self) -> Dict[str, Any]:
         """Calculates pairwise cosine similarity and creates node-link graph data."""
         t0 = time.time()
-        data = self.image_collection.get(include=["embeddings"])
+        data = self.image_collection.get(include=["embeddings", "metadatas"])
         ids = data["ids"]
         embeddings = data["embeddings"]
         
@@ -118,12 +151,13 @@ class SearchService:
             return {"nodes": [], "links": []}
             
         nodes = []
-        for doc_id in ids:
+        metadatas = data.get("metadatas") or [None] * len(ids)
+        for doc_id, metadata in zip(ids, metadatas):
+            item = self._process_item_id(doc_id, metadata)
             nodes.append({
                 "id": doc_id,
-                "composite_id": doc_id,
-                **self._process_item_id(doc_id),
-                "fileName": os.path.basename(doc_id.split(":::")[0])
+                **item,
+                "fileName": os.path.basename(item["path"])
             })
             
         # Use PyTorch for efficiency

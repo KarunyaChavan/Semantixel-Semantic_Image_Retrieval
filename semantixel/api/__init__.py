@@ -22,6 +22,7 @@ def create_app():
     app.index_service = index_service
     app.face_service = face_service
     app.search_service = search_service
+    app.google_drive_source = index_service.google_drive_source
 
     # Register Blueprints
     from semantixel.api.routes import main_bp

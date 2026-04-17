@@ -26,6 +26,19 @@
         </a>
     </header>
 
+    <section class="search-section" aria-label="Integrations">
+        <div class="search-options">
+            <div class="search-option">
+                <button onclick="connectGoogleDrive()" class="action-btn">
+                    <i class="fab fa-google-drive"></i> Connect Google Drive
+                </button>
+            </div>
+            <div class="search-option">
+                <span id="google-drive-status">Google Drive: checking status...</span>
+            </div>
+        </div>
+    </section>
+
     <main class="container">
         <!-- View Toggle -->
         <nav class="view-toggle" aria-label="View Toggle">
@@ -157,6 +170,7 @@
         // Initialize UI on page load with default settings
         function initializeUI() {
             changePlaceholder();
+            refreshGoogleDriveStatus();
         }
 
         function changePlaceholder() {
@@ -228,7 +242,7 @@
                     // --- SUBGRAPH INTERCEPT LOGIC ---
                     const isGraphView = document.getElementById('graph-view').style.display !== 'none';
                     if (isGraphView) {
-                        const compositeIds = data.map(item => item.composite_id || item.path);
+                        const compositeIds = data.map(item => item.composite_id || item.media_id || item.path);
 
                         if (compositeIds.length === 0) {
                             initGraph({ nodes: [], links: [] });
@@ -266,11 +280,11 @@
                         if (item.type === 'video') {
                             resultElement = document.createElement('figure');
                             resultElement.className = 'video-container';
-                            resultElement.dataset.originalPath = item.path; // Store original path
+                            resultElement.dataset.originalPath = item.display_path || item.path;
 
                             const video = document.createElement('video');
                             // Start video at the extracted timestamp
-                            video.src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(item.path)}#t=${item.timestamp}`;
+                            video.src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(item.media_id || item.path)}#t=${item.timestamp}`;
                             video.controls = true;
                             video.preload = "metadata";
 
@@ -285,21 +299,21 @@
                             resultElement.onclick = () => {
                                 displayEnlargedVideo(video.src);
                                 highlightSelectedImage(resultElement);
-                                showImagePath(item.path);
+                                showImagePath(item.display_path || item.path, item.media_id || item.path);
                             };
                         } else {
                             resultElement = document.createElement('figure');
                             resultElement.className = 'image-container';
                             const img = document.createElement('img');
-                            img.src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(item.path)}`;
-                            resultElement.dataset.originalPath = item.path; // Store original path
+                            img.src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(item.media_id || item.path)}`;
+                            resultElement.dataset.originalPath = item.display_path || item.path;
 
                             resultElement.appendChild(img);
 
                             resultElement.onclick = () => {
                                 displayEnlargedImage(img.src);
                                 highlightSelectedImage(resultElement);
-                                showImagePath(item.path);
+                                showImagePath(item.display_path || item.path, item.media_id || item.path);
                             };
                         }
 
@@ -369,11 +383,13 @@
         // Global variable to store current image path
         let currentImagePath = '';
         let currentImageSrc = '';
+        let currentImageFetchKey = '';
 
         // Image Path Panel Functions
-        function showImagePath(path) {
+        function showImagePath(path, fetchKey = path) {
             currentImagePath = path;
-            currentImageSrc = `http://${window.location.hostname}:${window.location.port || 8080}/images/${encodeURIComponent(path)}`;
+            currentImageFetchKey = fetchKey;
+            currentImageSrc = `http://${window.location.hostname}:${window.location.port || 8080}/images/${encodeURIComponent(fetchKey)}`;
 
             document.getElementById('selected-image-path').textContent = path;
             document.getElementById('image-path-panel').style.display = 'block';
@@ -415,6 +431,11 @@
         }
 
         function openImageLocation() {
+            if (currentImagePath.startsWith('Google Drive/')) {
+                alert('This item is from Google Drive. Open it from your Drive account or use View Full Size.');
+                return;
+            }
+
             // For Windows, we'll show the user how to open the location manually
             const path = currentImagePath.replace(/\//g, '\\');
             const folder = path.substring(0, path.lastIndexOf('\\'));
@@ -444,6 +465,52 @@
 
         function openImageInNewTab() {
             window.open(currentImageSrc, '_blank');
+        }
+
+        function refreshGoogleDriveStatus() {
+            const port = window.location.port || 8080;
+            fetch(`http://${window.location.hostname}:${port}/integrations/google_drive/status`)
+                .then(res => res.json())
+                .then(status => {
+                    const statusEl = document.getElementById('google-drive-status');
+                    if (!status.enabled) {
+                        statusEl.textContent = 'Google Drive: disabled in config';
+                    } else if (!status.dependencies_available) {
+                        statusEl.textContent = 'Google Drive: missing Python auth dependency';
+                    } else if (!status.client_secret_file) {
+                        statusEl.textContent = 'Google Drive: add client_secret_file in config';
+                    } else if (!status.redirect_uri) {
+                        statusEl.textContent = 'Google Drive: add redirect_uri in config';
+                    } else if (status.authorized) {
+                        statusEl.textContent = 'Google Drive: connected';
+                    } else {
+                        statusEl.textContent = 'Google Drive: not connected';
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('google-drive-status').textContent = 'Google Drive: status unavailable';
+                });
+        }
+
+        function connectGoogleDrive() {
+            const port = window.location.port || 8080;
+            fetch(`http://${window.location.hostname}:${port}/integrations/google_drive/auth/start`, {
+                method: 'POST'
+            })
+                .then(async res => {
+                    if (!res.ok) {
+                        const message = await res.text();
+                        throw new Error(message);
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    window.open(data.authorization_url, '_blank');
+                })
+                .catch(err => {
+                    alert(`Google Drive setup failed: ${err.message}`);
+                    refreshGoogleDriveStatus();
+                });
         }
 
         // Help System Functions
@@ -660,13 +727,13 @@
                     .linkWidth(link => link.value * 2)
                     .linkColor(() => 'var(--border-color)')
                     .onNodeClick(node => {
-                        const src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(node.path)}`;
+                        const src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(node.media_id || node.path)}`;
                         if (node.type === 'video') {
                             displayEnlargedVideo(src + `#t=${node.timestamp}`);
                         } else {
                             displayEnlargedImage(src);
                         }
-                        showImagePath(node.composite_id);
+                        showImagePath(node.display_path || node.path, node.media_id || node.path);
                     })
                     .nodeCanvasObject((node, ctx, globalScale) => {
                         const label = node.fileName;

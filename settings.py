@@ -8,6 +8,7 @@ from settings.directory_manager import DirectoryManager
 from settings.clip_manager import CLIPManager
 from settings.text_embed_manager import TextEmbedManager
 from settings.ocr_manager import OCRManager
+from settings.google_drive_manager import GoogleDriveManager
 
 
 class SemantixelSettings:
@@ -62,6 +63,7 @@ class SemantixelSettings:
         self.create_clip_options()
         self.create_text_embed_options()
         self.create_ocr_options()
+        self.create_google_drive_options()
         self.create_buttons()
 
     def create_main_frame(self):
@@ -130,6 +132,9 @@ class SemantixelSettings:
         """
         self.ocr_manager = OCRManager(self.frame, self.config)
 
+    def create_google_drive_options(self):
+        self.google_drive_manager = GoogleDriveManager(self.frame, self.config)
+
     def create_buttons(self):
         """
         Create and configure buttons for saving and quitting.
@@ -160,6 +165,7 @@ class SemantixelSettings:
         self.config.update(self.clip_manager.get_config())
         self.config.update(self.text_embed_manager.get_config())
         self.config.update(self.ocr_manager.get_config())
+        self.config.update(self.google_drive_manager.get_config())
 
         save_config(self.config, "config.yaml")
         messagebox.showinfo("Success", "Configuration saved successfully!")

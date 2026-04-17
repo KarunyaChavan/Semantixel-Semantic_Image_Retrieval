@@ -1,9 +1,11 @@
 import os
 import chromadb
 from tqdm import tqdm
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List
 from semantixel.core.config import config
 from semantixel.core.logging import logger
+from semantixel.media import MediaDescriptor, describe_local_media
+from semantixel.sources import GoogleDriveSource
 from semantixel.services.model_manager import model_manager
 from semantixel.services.bm25_service import BM25Service
 from semantixel.utils.scan_utils import fast_scan_for_media
@@ -25,6 +27,7 @@ class IndexService:
         )
         self.bm25_service = BM25Service(index_path=os.path.join(db_path, "bm25_index.pkl"))
         self.video_extensions = {".mp4", ".mkv", ".avi", ".mov"}
+        self.google_drive_source = GoogleDriveSource()
 
     def run_full_scan(self):
         """
@@ -39,19 +42,34 @@ class IndexService:
             return
 
         paths, elapsed = fast_scan_for_media(include_dirs, exclude_dirs)
-        logger.info(f"Found {len(paths)} media files in {elapsed:.2f}s")
-        
-        self.index_media(paths)
-        self.cleanup_index(paths)
+        media_items = [describe_local_media(path) for path in paths]
 
-    def index_media(self, paths: List[str]):
+        if self.google_drive_source.is_enabled():
+            try:
+                media_items.extend(self.google_drive_source.list_media())
+            except Exception as exc:
+                logger.warning(f"Google Drive scan skipped: {exc}")
+
+        logger.info(f"Found {len(media_items)} media files in {elapsed:.2f}s")
+        
+        self.index_media(media_items)
+        self.cleanup_index(media_items)
+
+    def _get_processing_input(self, media: MediaDescriptor):
+        if media.source == "local":
+            return media.locator
+        if media.source == self.google_drive_source.SOURCE_NAME:
+            return self.google_drive_source.fetch_image(media.locator)
+        raise ValueError(f"Unsupported media source: {media.source}")
+
+    def index_media(self, media_items: List[MediaDescriptor]):
         """
-        Processes and indexes the provided paths.
+        Processes and indexes the provided media items.
         """
         batch_size = config.batch_size
         deep_scan = config.deep_scan
         
-        with tqdm(total=len(paths), desc="Indexing media") as pbar:
+        with tqdm(total=len(media_items), desc="Indexing media") as pbar:
             processing_inputs = []
             processing_ids = []
             processing_metadatas = []
@@ -93,17 +111,18 @@ class IndexService:
                 processing_ids.clear()
                 processing_metadatas.clear()
 
-            for path in paths:
-                is_video = path.lower().endswith(tuple(self.video_extensions))
+            for media in media_items:
+                path = media.locator
+                is_video = media.source == "local" and path.lower().endswith(tuple(self.video_extensions))
                 needs_indexing = False
                 
                 # Check if already indexed
                 if is_video:
-                    results = self.image_collection.get(where={"source_video": path})
+                    results = self.image_collection.get(where={"source_media_id": media.media_id})
                     if not results["ids"]:
                         needs_indexing = True
                 else:
-                    results = self.image_collection.get(ids=[path])
+                    results = self.image_collection.get(ids=[media.media_id])
                     if not results["ids"]:
                         needs_indexing = True
                     elif deep_scan:
@@ -115,20 +134,29 @@ class IndexService:
                     if is_video:
                         for frame in extract_frames_in_memory(path):
                             processing_inputs.append(frame["image"])
-                            composite_id = f"{path}:::{frame['timestamp']}"
-                            processing_ids.append(composite_id)
+                            frame_media = describe_local_media(path, timestamp=frame["timestamp"])
+                            processing_ids.append(frame_media.composite_id)
                             processing_metadatas.append({
-                                "source_video": path,
-                                "timestamp": frame['timestamp'],
-                                "type": "video_frame"
+                                "source": frame_media.source,
+                                "source_media_id": frame_media.media_id,
+                                "locator": frame_media.locator,
+                                "display_path": frame_media.display_path,
+                                "timestamp": frame["timestamp"],
+                                "type": "video_frame",
                             })
                             
                             if len(processing_inputs) >= batch_size:
                                 flush_batch()
                     else:
-                        processing_inputs.append(path)
-                        processing_ids.append(path)
-                        processing_metadatas.append({"type": "image"})
+                        processing_inputs.append(self._get_processing_input(media))
+                        processing_ids.append(media.media_id)
+                        processing_metadatas.append({
+                            "source": media.source,
+                            "source_media_id": media.media_id,
+                            "locator": media.locator,
+                            "display_path": media.display_path,
+                            "type": "image",
+                        })
                         
                         if len(processing_inputs) >= batch_size:
                             flush_batch()
@@ -138,18 +166,20 @@ class IndexService:
             flush_batch() # Last one
             self.bm25_service.rebuild()
 
-    def cleanup_index(self, valid_paths: List[str]):
+    def cleanup_index(self, valid_media_items: List[MediaDescriptor]):
         """
         Removes stale entries from the index.
         """
         logger.info("Cleaning up index...")
-        all_ids = self.image_collection.get()["ids"]
-        valid_paths_set = set(valid_paths)
+        collection_data = self.image_collection.get(include=["metadatas"])
+        all_ids = collection_data["ids"]
+        all_metadatas = collection_data.get("metadatas") or []
+        valid_media_ids = {media.media_id for media in valid_media_items}
         
         ids_to_delete = []
-        for doc_id in all_ids:
-            base_path = doc_id.split(":::")[0] if ":::" in doc_id else doc_id
-            if base_path not in valid_paths_set:
+        for doc_id, metadata in zip(all_ids, all_metadatas):
+            source_media_id = metadata.get("source_media_id") if metadata else doc_id
+            if source_media_id not in valid_media_ids:
                 ids_to_delete.append(doc_id)
         
         if ids_to_delete:
