@@ -2,7 +2,13 @@ import torch
 import torch.nn.functional as F
 import time
 import os
+import io
 from typing import List, Dict, Any, Optional
+from urllib.parse import urlparse
+
+import requests
+from PIL import Image
+
 from semantixel.media import parse_media_id
 from semantixel.services.model_manager import model_manager
 from semantixel.services.index_service import IndexService
@@ -43,7 +49,35 @@ class SearchService:
 
         return parse_media_id(item_id).to_result()
 
+    def _is_remote_url(self, query: str) -> bool:
+        parsed = urlparse(query)
+        return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+    def _fetch_remote_image(self, url: str) -> Image.Image:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        }
+        try:
+            response = requests.get(url, headers=headers, timeout=(10, 60))
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise ValueError(f"Unable to fetch remote image: {exc}") from exc
+
+        content_type = response.headers.get("Content-Type", "")
+        if content_type and not content_type.startswith("image/"):
+            raise ValueError(f"Remote URL did not return an image. Content-Type: {content_type}")
+
+        try:
+            return Image.open(io.BytesIO(response.content)).convert("RGB")
+        except OSError as exc:
+            raise ValueError("Remote URL response could not be decoded as an image.") from exc
+
     def _resolve_query_media(self, query: str):
+        if self._is_remote_url(query):
+            return None, self._fetch_remote_image(query)
+
         media = parse_media_id(query)
         if media.source == "local":
             return media, media.locator
@@ -81,7 +115,8 @@ class SearchService:
         )
         
         # Exclude self if top result is remarkably similar
-        return self._filter_results(results, top_k, threshold, media_type, exclude_path=query_media.media_id)
+        exclude_path = query_media.media_id if query_media is not None else None
+        return self._filter_results(results, top_k, threshold, media_type, exclude_path=exclude_path)
 
     def keyword_search(self, query: str, top_k: int = 5, threshold: float = 0.0, media_type: str = "all") -> List[Dict[str, Any]]:
         """BM25 search."""

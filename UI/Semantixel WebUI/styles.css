@@ -124,6 +124,25 @@ body {
     gap: 32px;
 }
 
+.integration-bar {
+    width: 100%;
+    max-width: var(--app-max-width);
+    margin: 0 auto 24px;
+    padding: 16px 24px;
+    border-radius: var(--radius-lg);
+    background: var(--bg-elevated);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-glass);
+}
+
+.integration-bar .search-options {
+    padding-top: 0;
+    border-top: none;
+    justify-content: space-between;
+}
+
 /* =========================================
    View Toggle Navigation
    ========================================= */
@@ -131,7 +150,7 @@ body {
     display: flex;
     justify-content: center;
     gap: 12px;
-    margin-bottom: 8px;
+    margin-bottom: 0;
 }
 
 .toggle-btn {
@@ -254,6 +273,15 @@ body {
     background-color: var(--accent-hover);
     transform: translateY(-2px);
     box-shadow: var(--shadow-lg);
+}
+
+.search-btn:disabled,
+.action-btn:disabled {
+    background-color: #94a3b8;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+    opacity: 0.8;
 }
 
 /* Options Grid */
@@ -723,6 +751,12 @@ dialog::backdrop {
    Responsive Adjustments
    ========================================= */
 @media (max-width: 768px) {
+    .integration-bar {
+        margin: 0 16px 20px;
+        width: auto;
+        padding: 16px;
+    }
+
     .search-bar {
         flex-direction: column;
     }
@@ -735,6 +769,10 @@ dialog::backdrop {
     .search-option {
         justify-content: space-between;
         margin: 0;
+    }
+
+    .integration-bar .search-option {
+        justify-content: flex-start;
     }
 
     .image-path-panel {

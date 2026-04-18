@@ -48,7 +48,10 @@ def clip_image():
             query = query.strip('"').strip("'")
             _validate_local_query_path(query)
             
-    results = current_app.search_service.semantic_image_search(query, top_k, threshold, media_type)
+    try:
+        results = current_app.search_service.semantic_image_search(query, top_k, threshold, media_type)
+    except ValueError as exc:
+        abort(400, str(exc))
     return jsonify(results)
 
 @main_bp.route("/face_search", methods=["POST"])

@@ -26,10 +26,10 @@
         </a>
     </header>
 
-    <section class="search-section" aria-label="Integrations">
+    <section class="integration-bar" aria-label="Integrations">
         <div class="search-options">
             <div class="search-option">
-                <button onclick="connectGoogleDrive()" class="action-btn">
+                <button id="google-drive-connect-btn" onclick="connectGoogleDrive()" class="action-btn">
                     <i class="fab fa-google-drive"></i> Connect Google Drive
                 </button>
             </div>
@@ -473,22 +473,32 @@
                 .then(res => res.json())
                 .then(status => {
                     const statusEl = document.getElementById('google-drive-status');
+                    const connectBtn = document.getElementById('google-drive-connect-btn');
                     if (!status.enabled) {
                         statusEl.textContent = 'Google Drive: disabled in config';
+                        connectBtn.disabled = true;
                     } else if (!status.dependencies_available) {
                         statusEl.textContent = 'Google Drive: missing Python auth dependency';
+                        connectBtn.disabled = true;
                     } else if (!status.client_secret_file) {
                         statusEl.textContent = 'Google Drive: add client_secret_file in config';
+                        connectBtn.disabled = true;
                     } else if (!status.redirect_uri) {
                         statusEl.textContent = 'Google Drive: add redirect_uri in config';
+                        connectBtn.disabled = true;
                     } else if (status.authorized) {
                         statusEl.textContent = 'Google Drive: connected';
+                        connectBtn.disabled = true;
+                        connectBtn.innerHTML = '<i class="fab fa-google-drive"></i> Google Drive Connected';
                     } else {
                         statusEl.textContent = 'Google Drive: not connected';
+                        connectBtn.disabled = false;
+                        connectBtn.innerHTML = '<i class="fab fa-google-drive"></i> Connect Google Drive';
                     }
                 })
                 .catch(() => {
                     document.getElementById('google-drive-status').textContent = 'Google Drive: status unavailable';
+                    document.getElementById('google-drive-connect-btn').disabled = true;
                 });
         }
 
