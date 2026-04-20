@@ -34,3 +34,6 @@ __pycache__/
 
 #Ignoring config files
 config.yaml
+google_drive_token.json
+client_secret_*.json
+*google*token*.json

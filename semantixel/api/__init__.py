@@ -5,6 +5,7 @@ from semantixel.core.logging import logger
 from semantixel.services.index_service import IndexService
 from semantixel.services.search_service import SearchService
 from semantixel.services.face_service import FaceService
+from semantixel.services.model_manager import model_manager
 
 def create_app():
     """
@@ -22,6 +23,14 @@ def create_app():
     app.index_service = index_service
     app.face_service = face_service
     app.search_service = search_service
+    app.google_drive_source = index_service.google_drive_source
+
+    # Warm the CLIP model at server startup so the first semantic query
+    # does not pay the full model load cost.
+    try:
+        model_manager.clip.load()
+    except Exception as exc:
+        logger.warning(f"CLIP warmup skipped: {exc}")
 
     # Register Blueprints
     from semantixel.api.routes import main_bp
