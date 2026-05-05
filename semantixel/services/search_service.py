@@ -38,29 +38,36 @@ class SearchService:
         ):
             path_val = metadata.get("display_path") or metadata.get("locator") or metadata.get("source_file") or item_id
             
+            orig_type = metadata.get("type", "image")
+            is_video = orig_type == "video_frame" or any(path_val.lower().endswith(ext) for ext in [".mp4", ".mkv", ".avi", ".mov"])
+            
             result = {
                 "media_id": metadata.get("source_media_id") or metadata.get("source_file") or item_id,
                 "source": metadata.get("source", "local"),
                 "path": path_val,
                 "display_path": path_val,
-                "type": "video" if metadata.get("type") == "video_frame" else metadata.get("type", "image"),
+                "type": "video" if is_video else orig_type,
                 "locator": metadata.get("locator") or metadata.get("source_file") or item_id,
                 "composite_id": item_id,
             }
             if metadata.get("timestamp") is not None:
                 result["timestamp"] = float(metadata["timestamp"])
+            elif is_video:
+                result["timestamp"] = 0.0
             return result
 
         if ":::" in item_id:
             try:
                 media_path, postfix = item_id.split(":::", 1)
                 if postfix in ("audio", "ambient"):
+                    is_video = any(media_path.lower().endswith(ext) for ext in [".mp4", ".mkv", ".avi", ".mov"])
                     return {
                         "media_id": media_path,
                         "source": "local",
                         "path": media_path,
                         "display_path": media_path,
-                        "type": "audio",
+                        "type": "video" if is_video else "audio",
+                        "timestamp": 0.0 if is_video else None,
                         "locator": media_path,
                         "composite_id": item_id
                     }

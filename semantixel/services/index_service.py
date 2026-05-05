@@ -74,7 +74,7 @@ class IndexService:
         deep_scan = config.deep_scan
         
         # Priority De-coupling: Index fast visuals instantly, reserve audio indexing for very end
-        audio_items = [m for m in media_items if m.locator.lower().endswith(tuple(self.audio_extensions))]
+        audio_items = [m for m in media_items if m.locator.lower().endswith(tuple(self.audio_extensions | self.video_extensions))]
         visual_items = [m for m in media_items if not m.locator.lower().endswith(tuple(self.audio_extensions))]
         
         with tqdm(total=len(media_items), desc="Indexing media") as pbar:
