@@ -21,7 +21,7 @@ ttkbootstrap==1.14.1
 darkdetect==0.8.0
 opencv-python==4.11.0.86
 mtcnn-opencv==1.0.2
-deepface==0.0.93
+deepface==0.0.99
 flowlauncher==0.2.0
 rank-bm25==0.2.2
 ftfy==6.3.1
