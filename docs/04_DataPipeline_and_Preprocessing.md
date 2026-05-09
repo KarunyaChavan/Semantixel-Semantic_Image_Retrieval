@@ -1,26 +1,26 @@
 # Data Pipeline and Preprocessing
 
-This document explains how images are discovered, preprocessed, and prepared for embedding in Semantixel.
+This document outlines the pipeline for image discovery, preprocessing, and database ingestion within Semantixel.
 
 ## Dataset ingestion
 
-- Image discovery scripts live in `Index/` (e.g., `scan.py`, `scan_default.py`). They iterate directories and produce CSVs or lists of file paths (`Index/paths.csv`).
-- Metadata (if available) is read alongside image files and stored in the index database.
+- Discovery scripts are maintained in `semantixel/utils/` (e.g., `scan_utils.py` and `video_utils.py`). They recursively traverse local directories or connect to external sources like Google Drive via `semantixel/sources/google_drive_source.py`.
+- Detected files are queued for processing, and relevant metadata (such as source URI, timestamps, and file sizes) is collated for indexing.
 
 ## Image preprocessing
 
-- Images are loaded and resized to the model's expected input size (for CLIP models, typically 224x224 or 336x336 for larger models).
-- Standard normalization (mean/std) matching the pretrained model is applied.
-- Optional augmentations (for training only): random crop, flip, color jitter, and normalization.
+- During processing, the `semantixel.media` module manages the loading and standardization of media assets.
+- Images are resized and normalized according to the exact specifications expected by the active CLIP model provider.
+- For video files, frame extraction routines capture keyframes for semantic analysis.
 
 ## Embedding caching and storage
 
-- Embeddings are computed in batches and cached to disk or the `db/` directory. The repository contains `db/chroma.sqlite3` and per-index folders.
-- `create_index.py` orchestrates the indexing: it loads images, computes embeddings via `CLIP/` or `text_embeddings/`, and writes vectors and metadata to the database.
+- Embeddings are generated efficiently in batches via the `index_service.py` in `semantixel/services/`.
+- Computed embeddings, OCR text, and structural metadata are stored persistently in the `db/` directory, managed by ChromaDB for vectors and a local BM25 index for text.
 
-⚙️ Example:
+Example workflow:
 
-1. Scan images: `python Index/scan.py --root <image_folder>`
-2. Create index: `python create_index.py --data Index/paths.csv --out db/`
+1. Perform scan: The CLI initiates `scan_utils.py` to identify all relevant media.
+2. Index generation: `index_service.py` coordinates with providers to encode the media and writes the results to the database.
 
-💡 Note: Batching (e.g., 32–128 images per batch) reduces memory overhead and speeds up GPU utilization.
+Note: Batching is strictly enforced during the feature extraction phase to optimize GPU memory utilization and maximize throughput.

@@ -5,29 +5,30 @@ This document outlines the high-level architecture of Semantixel and how the mai
 ## High-level workflow
 
 <p align="center">
-  <img src="../UI/Semantixel WebUI/assets/architecture.png" alt="SemantiXel Logo" width="600px" height="800px"/>
+  <img src="../UI/Semantixel WebUI/assets/architecture.png" alt="SemantiXel Architecture" width="600px" height="800px"/>
 </p>
 
-1. Data ingestion: images and optional metadata are discovered and scanned by the `Index/` utilities (see `scan.py`, `scan_default.py`).
-2. Feature extraction: images are preprocessed and passed to the embedding model in `CLIP/` or `text_embeddings/` modules to produce fixed-length vectors.
-3. Index creation: embeddings are stored in an index (on-disk DB or vector index). The repository includes `create_index.py` and `Index/create_db.py` to build and persist the index.
-4. Search API / UI: `server.py` or the WebUI under `UI/Semantixel WebUI/` provide endpoints and pages for text/image queries and result visualization.
+1. Data ingestion: Media files and optional metadata are discovered and processed by utilities in `semantixel/utils/` (such as `scan_utils.py` and `video_utils.py`) and integrated sources like Google Drive via `semantixel/sources/`.
+2. Feature extraction: Images are preprocessed and passed to the embedding providers located in `semantixel/providers/` (e.g., `clip/hf_provider.py`, `ocr/doctr_provider.py`) to produce fixed-length vectors and extract text.
+3. Index creation: Embeddings and text data are stored in a persistent index. `semantixel/services/index_service.py` handles the orchestration of writing vector data to ChromaDB and text data to a BM25 index.
+4. Search API / UI: The API routes located in `semantixel/api/routes.py` (served via `wsgi.py`) expose endpoints for text/image queries. The WebUI under `UI/Semantixel WebUI/` visualizes the search results.
 
 ## Component interactions
 
-- Indexing tools (Index/*, `create_index.py`) read images and metadata, call the embedding pipeline, and write vectors to persistent storage in `db/`.
-- Embedding modules (`CLIP/`, `text_embeddings/`) expose encoders to convert images or text to vectors.
-- The retrieval layer (`server.py`, `main.py`, `face_search.py`) loads the vector store and performs nearest-neighbor lookup and filtering.
-- UI (`UI/Semantixel WebUI/`, Flow Launcher plugin) communicates with the backend endpoints to present ranked images and allow interactive refinement.
+- Scanning utilities read files and pass them to indexing services.
+- The `index_service.py` coordinates with providers to extract features and persists the embeddings in the `db/` directory.
+- Model providers (`semantixel/providers/`) expose clean interfaces to external ML models (Hugging Face, docTR, etc.).
+- The retrieval layer (`semantixel/services/search_service.py`) queries the vector stores and BM25 index to perform nearest-neighbor lookup and hybrid search.
+- The UI communicates with the backend API to present ranked results and enable interactive exploration.
 
 ## Libraries and frameworks
 
-- PyTorch (for model inference and optionally fine-tuning).
-- Hugging Face transformers / custom wrapper (`CLIP/hftransformers_clip.py`) for model loading.
-- Chroma/SQLite (the repository contains `db/chroma.sqlite3`) or other vector DBs for persistent storage.
-- Web UI: simple static HTML/CSS/JS under `UI/Semantixel WebUI/` and optional Flow Launcher integration.
-- Optional: FAISS or other vector search libraries can be integrated for scalable ANN search.
+- PyTorch (for model inference).
+- Hugging Face Transformers and Accelerate (managed via `semantixel/providers/clip/hf_provider.py`).
+- ChromaDB for vector storage.
+- Rank-BM25 for lexical search.
+- Flask for serving the API layer.
+- Web UI constructed with standard web technologies.
 
-⚙️ Example block diagram (logical):
-
-Image files -> Index scanner -> Preprocessing -> CLIP encoder -> Embeddings -> Index persisted (db/) -> Search API -> UI
+Example abstract workflow:
+Image files -> Scanner -> Preprocessing -> Providers (CLIP/OCR) -> Services (Index/BM25) -> Persistent Storage (db/) -> API Routes -> UI
