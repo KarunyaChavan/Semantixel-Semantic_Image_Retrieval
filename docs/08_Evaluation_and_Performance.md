@@ -1,31 +1,26 @@
 # Evaluation and Performance
 
-This document describes recommended evaluation metrics and performance considerations for Semantixel.
+This document details evaluation methodologies and performance targets for Semantixel deployments.
 
 ## Evaluation metrics
 
-- Precision@K: proportion of relevant images in the top-K results.
-- Recall@K: fraction of relevant items retrieved within top-K.
-- Mean reciprocal rank (MRR) and average precision (AP) for ranked retrieval.
+- Precision@K: The proportion of highly relevant images present within the top-K returned results.
+- Recall@K: The fraction of all relevant items successfully retrieved within the top-K.
+- Mean Reciprocal Rank (MRR): Useful for evaluating the rank of the first relevant result.
 
 ## Latency and throughput
 
-- Measure end-to-end latency from receiving a query to returning top-K results. For interactive UIs target <300ms for small indices.
-- Throughput: number of queries per second the system can sustain; GPU inference increases throughput for batch queries.
+- Target end-to-end latency: For interactive web sessions, query processing and retrieval should complete in under 300ms on a moderately sized index.
+- Throughput optimization: Batching is strictly implemented during the indexing phase to ensure high throughput on hardware accelerators.
 
 ## Scalability
 
-- Small datasets: SQLite/Chroma is acceptable.
-- Large datasets: use FAISS or HNSW for approximate nearest neighbor (ANN) indexing. Use sharding and replication for distributed loads.
+- The default architecture utilizing ChromaDB is highly optimized for local to medium-scale deployments (up to several million vectors).
+- Lexical search scalability is maintained through the efficient `bm25_service.py`.
 
 ## Hardware notes
 
-- GPU: reduces embedding inference time significantly — GPUs are recommended when indexing at scale or when providing low-latency interactive image queries.
-- CPU-only: suitable for small datasets and offline indexing but will be significantly slower for large-scale indexing or realtime services.
+- GPU Acceleration: Utilizing a CUDA-enabled GPU is strongly recommended. It drastically reduces the inference time for both CLIP embeddings and DocTR OCR processing.
+- CPU-only Execution: Supported for environments without dedicated accelerators, though it is primarily suited for smaller datasets or background processing where latency is not critical.
 
-⚙️ Example benchmark (sample):
-
-| Setup | Embedding throughput | Search latency |
-|---|---:|---:|
-| RTX 3050 (batch=64) | 100 images/s | <15ms (FAISS) |
-| CPU (8 cores) | ~100 images/s | ~70ms (small index) |
+Performance is largely dictated by the selected model backends in the providers directory and the available compute resources.
