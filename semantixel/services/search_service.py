@@ -58,17 +58,18 @@ class SearchService:
 
         if ":::" in item_id:
             try:
-                media_path, postfix = item_id.split(":::", 1)
+                base_media_id, postfix = item_id.split(":::", 1)
                 if postfix in ("audio", "ambient"):
-                    is_video = any(media_path.lower().endswith(ext) for ext in [".mp4", ".mkv", ".avi", ".mov"])
+                    parsed = parse_media_id(base_media_id)
+                    is_video = any(parsed.locator.lower().endswith(ext) for ext in [".mp4", ".mkv", ".avi", ".mov"])
                     return {
-                        "media_id": media_path,
-                        "source": "local",
-                        "path": media_path,
-                        "display_path": media_path,
+                        "media_id": base_media_id,
+                        "source": parsed.source,
+                        "path": parsed.locator,
+                        "display_path": parsed.locator,
                         "type": "video" if is_video else "audio",
                         "timestamp": 0.0 if is_video else None,
-                        "locator": media_path,
+                        "locator": parsed.locator,
                         "composite_id": item_id
                     }
             except ValueError:
@@ -112,6 +113,21 @@ class SearchService:
             return media, self.index_service.google_drive_source.fetch_image(media.locator)
         raise ValueError(f"Unsupported query media source: {media.source}")
 
+    def _normalize_distance(self, raw_distance: float, model_type: str) -> float:
+        s = 1.0 - raw_distance
+        if model_type == "clip":
+            s_min, s_max = 0.12, 0.30
+        elif model_type == "minilm":
+            s_min, s_max = 0.20, 0.70
+        elif model_type == "clap":
+            s_min, s_max = 0.10, 0.28
+        else:
+            s_min, s_max = 0.0, 1.0
+            
+        s_norm = (s - s_min) / (s_max - s_min) if s_max > s_min else 0.0
+        s_norm = max(0.0, min(1.0, s_norm))
+        return 1.0 - s_norm
+
     def semantic_text_search(self, query: str, top_k: int = 5, threshold: float = 0.0, media_type: str = "image") -> List[Dict[str, Any]]:
         """
         Performs semantic search across both images and transcribed audio/OCR texts
@@ -147,15 +163,18 @@ class SearchService:
         combined_items = []
         if visual_results["ids"] and visual_results["ids"][0]:
             for p, d, m in zip(visual_results["ids"][0], visual_results["distances"][0], visual_results["metadatas"][0]):
-                combined_items.append((p, d, m))
+                d_norm = self._normalize_distance(d, "clip")
+                combined_items.append((p, d_norm, m))
                 
         if text_results["ids"] and text_results["ids"][0]:
             for p, d, m in zip(text_results["ids"][0], text_results["distances"][0], text_results["metadatas"][0]):
-                combined_items.append((p, d, m))
+                d_norm = self._normalize_distance(d, "minilm")
+                combined_items.append((p, d_norm, m))
                 
         if ambient_results["ids"] and ambient_results["ids"][0]:
             for p, d, m in zip(ambient_results["ids"][0], ambient_results["distances"][0], ambient_results["metadatas"][0]):
-                combined_items.append((p, d, m))
+                d_norm = self._normalize_distance(d, "clap")
+                combined_items.append((p, d_norm, m))
                 
         # Sort combined by distance ascending (lower distance = higher similarity)
         combined_items.sort(key=lambda x: x[1])
