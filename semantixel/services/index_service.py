@@ -77,7 +77,8 @@ class IndexService:
         audio_items = [m for m in media_items if m.locator.lower().endswith(tuple(self.audio_extensions | self.video_extensions))]
         visual_items = [m for m in media_items if not m.locator.lower().endswith(tuple(self.audio_extensions))]
         
-        with tqdm(total=len(media_items), desc="Indexing media") as pbar:
+        total_tasks = len(visual_items) + len(audio_items)
+        with tqdm(total=total_tasks, desc="Indexing media") as pbar:
             processing_inputs = []
             processing_ids = []
             processing_metadatas = []
@@ -176,14 +177,17 @@ class IndexService:
             
             # PHASE 2: Process Audio Constraints Sequentially
             for media in audio_items:
-                results = self.text_collection.get(where={"source_media_id": media.media_id})
-                if not results["ids"]:
+                # 1. Transcript indexing
+                transcript_id = f"{media.media_id}:::audio"
+                transcript_results = self.text_collection.get(ids=[transcript_id])
+                
+                if not transcript_results["ids"]:
                     transcript = model_manager.audio.transcribe(media.locator)
-                    if transcript:
+                    # Only index if we actually got text back (handles silent videos)
+                    if transcript and transcript.strip():
                         text_embedding = model_manager.text_embed.get_embeddings(transcript)
-                        composite_id = f"{media.media_id}:::audio"
                         self.text_collection.upsert(
-                            ids=[composite_id],
+                            ids=[transcript_id],
                             embeddings=[text_embedding],
                             metadatas=[{
                                 "source": media.source,
@@ -193,21 +197,27 @@ class IndexService:
                                 "type": "audio"
                             }]
                         )
-                        self.bm25_service.add_document(composite_id, transcript)
-                        
-                    # Process CLAP ambient sound vector
+                        self.bm25_service.add_document(transcript_id, transcript)
+                
+                # 2. Ambient sound indexing
+                ambient_id = f"{media.media_id}:::ambient"
+                ambient_results = self.audio_collection.get(ids=[ambient_id])
+                
+                if not ambient_results["ids"]:
                     ambient_embedding = model_manager.clap.get_audio_embeddings(media.locator)
-                    self.audio_collection.upsert(
-                        ids=[f"{media.media_id}:::ambient"],
-                        embeddings=[ambient_embedding],
-                        metadatas=[{
-                                "source": media.source,
-                                "source_media_id": media.media_id,
-                                "locator": media.locator,
-                                "display_path": media.display_path,
-                                "type": "audio"
-                        }]
-                    )
+                    # Only index if the embedding is valid (not a zero-vector from a silent file)
+                    if ambient_embedding and any(v != 0 for v in ambient_embedding):
+                        self.audio_collection.upsert(
+                            ids=[ambient_id],
+                            embeddings=[ambient_embedding],
+                            metadatas=[{
+                                    "source": media.source,
+                                    "source_media_id": media.media_id,
+                                    "locator": media.locator,
+                                    "display_path": media.display_path,
+                                    "type": "audio"
+                            }]
+                        )
                 
                 pbar.update(1)
                 
