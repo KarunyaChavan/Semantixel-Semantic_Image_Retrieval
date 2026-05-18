@@ -378,25 +378,28 @@
             const wasThumbPaused = thumbVideo.paused;
             thumbVideo.muted = true;
 
-            const closeBtn = document.createElement('button');
-            closeBtn.className = 'dialog-close-btn';
-            closeBtn.innerHTML = '<i class="fas fa-times"></i>';
-            closeBtn.onclick = () => {
-                // Final sync back to thumbnail before closing
-                thumbVideo.currentTime = video.currentTime;
-                thumbVideo.muted = false;
-                if (video.paused) thumbVideo.pause();
-                else thumbVideo.play();
-
-                enlargedImgContainer.close();
-                enlargedImgContainer.innerHTML = '';
-            };
-
             const video = document.createElement('video');
             video.src = thumbVideo.src;
             video.currentTime = thumbVideo.currentTime; // Sync start time
             video.controls = true;
             video.autoplay = true;
+
+            // Define central cleanup and restoration logic
+            enlargedImgContainer.onclose = () => {
+                // Final sync back to thumbnail
+                thumbVideo.currentTime = video.currentTime;
+                thumbVideo.muted = false;
+                if (video.paused) thumbVideo.pause();
+                else thumbVideo.play();
+
+                enlargedImgContainer.innerHTML = ''; // Kill media elements
+                enlargedImgContainer.onclose = null; // Clean up listener
+            };
+
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'dialog-close-btn';
+            closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+            closeBtn.onclick = () => enlargedImgContainer.close();
 
             // Bidirectional Sync Listeners
             video.onplay = () => thumbVideo.play();
@@ -407,10 +410,10 @@
             enlargedImgContainer.appendChild(closeBtn);
             enlargedImgContainer.appendChild(video);
 
-            // Close on backdrop click (also sync back)
+            // Close on backdrop click
             enlargedImgContainer.onclick = (e) => {
                 if (e.target === enlargedImgContainer) {
-                    closeBtn.onclick();
+                    enlargedImgContainer.close();
                 }
             };
 
