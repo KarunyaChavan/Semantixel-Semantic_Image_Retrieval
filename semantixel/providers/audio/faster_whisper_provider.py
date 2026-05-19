@@ -3,11 +3,13 @@ from typing import Optional
 from semantixel.providers.base import AudioProvider
 from semantixel.core.logging import logger
 
+DEFAULT_WHISPER_CHECKPOINT = "tiny.en"
+
 class FasterWhisperProvider(AudioProvider):
     """
     Faster-Whisper (CTranslate2) implementation of Audio Transcriptions.
     """
-    def __init__(self, checkpoint: str = "tiny.en"):
+    def __init__(self, checkpoint: str = DEFAULT_WHISPER_CHECKPOINT):
         self.checkpoint = checkpoint
         self.model = None
         # Faster-Whisper requires explicit "cuda" or "cpu" strings
@@ -42,11 +44,10 @@ class FasterWhisperProvider(AudioProvider):
         self.load()
         try:
             import librosa
-            # Truncate to 20 seconds to guarantee ultra-fast processing
-            # Whisper intrinsically expects 16kHz
+            # Capture first 20 seconds to understand the context of the audio file and ensure fast processing
             y, sr = librosa.load(file_path, sr=16000, duration=20.0)
             
-            # faster_whisper Model.transcribe accepts a 1D numpy array directly!
+            # faster_whisper Model.transcribe accepts a 1D numpy array directly
             segments, info = self.model.transcribe(y, beam_size=5)
             
             # The segments object is a generator, we must exhaust it
