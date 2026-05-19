@@ -173,7 +173,8 @@ class IndexService:
                 
                 pbar.update(1)
             
-            flush_batch() # Last one for visual
+            # Flush any remaining visuals before moving to audio
+            flush_batch() 
             
             # PHASE 2: Process Audio Constraints Sequentially
             for media in audio_items:
