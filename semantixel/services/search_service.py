@@ -36,7 +36,12 @@ class SearchService:
             or metadata.get("source")
             or metadata.get("source_file")
         ):
-            path_val = metadata.get("display_path") or metadata.get("locator") or metadata.get("source_file") or item_id
+            path_val = (
+                metadata.get("display_path") 
+                or metadata.get("locator") 
+                or metadata.get("source_file") 
+                or item_id
+            )
             
             orig_type = metadata.get("type", "image")
             is_video = orig_type == "video_frame" or any(path_val.lower().endswith(ext) for ext in [".mp4", ".mkv", ".avi", ".mov"])
@@ -114,6 +119,26 @@ class SearchService:
         raise ValueError(f"Unsupported query media source: {media.source}")
 
     def _normalize_distance(self, raw_distance: float, model_type: str) -> float:
+        """
+        Normalizes raw distance values into a 0–1 similarity score
+        based on model-specific expected similarity ranges.
+
+        The normalization thresholds are determined empirically by
+        analyzing similarity distributions for:
+        
+            - Relevant matches (true positives / semantically related results)
+            - Irrelevant matches (negative or unrelated results)
+
+        Guidelines:
+        - `s_min` should represent the lower boundary of typically
+           relevant similarity scores.
+
+        - `s_max` should represent the upper boundary of highly
+           confident matches.
+
+        This normalization improves consistency across different
+        embedding models and retrieval modalities.
+        """
         s = 1.0 - raw_distance
         if model_type == "clip":
             s_min, s_max = 0.12, 0.30
@@ -127,7 +152,19 @@ class SearchService:
         s_norm = (s - s_min) / (s_max - s_min) if s_max > s_min else 0.0
         s_norm = max(0.0, min(1.0, s_norm))
         return 1.0 - s_norm
+    
+    def _query_collection(self, embedding_fn, collection, query, query_k):
+        """
+        Helper to query a ChromaDB collection with the appropriate embedding function.
+        """
+        embedding = embedding_fn(query)
 
+        return collection.query(
+            query_embeddings=[embedding],
+            n_results=query_k,
+            include=["distances", "metadatas"]
+        )
+    
     def semantic_text_search(self, query: str, top_k: int = 5, threshold: float = 0.0, media_type: str = "image") -> List[Dict[str, Any]]:
         """
         Performs semantic search across both images and transcribed audio/OCR texts
@@ -136,27 +173,27 @@ class SearchService:
         query_k = top_k * 10
         
         # 1. Image Collection (CLIP)
-        clip_embedding = model_manager.clip.get_text_embeddings(query)
-        visual_results = self.image_collection.query(
-            query_embeddings=[clip_embedding],
-            n_results=query_k,
-            include=["distances", "metadatas"]
+        visual_results = self._query_collection(
+            model_manager.clip.get_text_embeddings,
+            self.image_collection,
+            query,
+            query_k
         )
         
         # 2. Text Collection (MiniLM)
-        minilm_embedding = model_manager.text_embed.get_embeddings(query)
-        text_results = self.text_collection.query(
-            query_embeddings=[minilm_embedding],
-            n_results=query_k,
-            include=["distances", "metadatas"]
+        text_results = self._query_collection(
+            model_manager.text_embed.get_embeddings,
+            self.text_collection,
+            query,
+            query_k
         )
         
         # 3. Ambient Audio Collection (CLAP)
-        clap_embedding = model_manager.clap.get_text_embeddings(query)
-        ambient_results = self.audio_collection.query(
-            query_embeddings=[clap_embedding],
-            n_results=query_k,
-            include=["distances", "metadatas"]
+        ambient_results = self._query_collection(
+            model_manager.clap.get_text_embeddings,
+            self.audio_collection,
+            query,
+            query_k
         )
         
         # Zip and Merge
