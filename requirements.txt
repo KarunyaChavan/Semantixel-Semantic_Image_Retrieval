@@ -1,6 +1,6 @@
 --extra-index-url https://download.pytorch.org/whl/cu118
 tqdm==4.66.4
-requests==2.32.4
+requests==2.33.1
 pillow==12.2.0
 numpy==1.26.4
 torch==2.7.1+cu118
