@@ -1,40 +1,35 @@
 # Deployment and Usage
 
-This document explains how to set up and run Semantixel locally and options for deployment.
+This document outlines the setup, execution, and deployment strategies for Semantixel.
 
 ## Requirements
 
 - Python 3.11
-- `requirements.txt` for Python dependencies (present at repository root). Key libraries include torch, transformers, numpy, and pillow.
+- `requirements.txt` containing precise dependencies, including PyTorch, Transformers, and Flask.
 
 ## Local setup
 
-1. Create a virtual environment and install dependencies. Example (PowerShell):
-    ```
-    conda create -n Semantixel python=3.11 -y
+1. Create a virtual environment and install all requisite packages.
+    ```bash
+    conda create -n semantixel python=3.11 -y
+    conda activate semantixel
     pip install -r requirements.txt
     ```
 
-2. Run settings.py to configure models used and directories to be included and excluded from scanning:
-
-    # Run Settings
-    ``` 
+2. Configure the application via the settings interface, which manages `config.yaml`:
+    ```bash
     python settings.py
     ```
 
-3. Run the application to open the Web UI/Flowlauncher Plugin:
-
-    # Run server
-    ```
+3. Launch the server and processing queues:
+    ```bash
     python main.py
     ```
-    
-## Docker and cloud
 
-- Containerize: create a `Dockerfile` that installs Python and project dependencies, copies the code, and exposes the server port.
-- GPU support: use an appropriate CUDA-enabled base image and the `--gpus` flag for `docker run`.
-- Hosting: backend can be deployed to cloud VMs, Kubernetes, or serverless endpoints; the static UI can be hosted on GitHub Pages or any static host.
+## Advanced Deployment
 
-⚙️ Notes:
-- If you plan to run indexing at scale, use a GPU-enabled instance for feature extraction.
-- For production search, prefer FAISS or an external vector DB for performance and scalability.
+- Containerization: Semantixel is suitable for containerized deployment. A `Dockerfile` should install dependencies and expose the WSGI application defined in `wsgi.py`.
+- Hardware Passthrough: When utilizing Docker, ensure that GPU resources are passed through using the `--gpus` flag for accelerated model inference.
+- Cloud Hosting: The API layer can be securely deployed to cloud instances, while the static frontend can be served via standard web servers or CDNs.
+
+Note: In production environments, it is recommended to run the Flask application behind a production-grade WSGI server such as Gunicorn or Waitress.

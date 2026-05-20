@@ -1,67 +1,60 @@
 # Semantixel
 
-Semantixel is a semantic media retrieval system for local and connected image sources. It indexes visual content with CLIP embeddings, extracts on-image text with OCR, and exposes search workflows for text-to-image, image-to-image, and OCR-backed retrieval through a lightweight web interface.
+Semantixel is an advanced semantic media retrieval system for local and connected image sources. It seamlessly indexes visual content using CLIP embeddings, extracts on-image text via OCR, and exposes robust search workflows for text-to-image, image-to-image, and OCR-backed retrieval through a lightweight web interface.
 
-The project is designed for personal knowledge bases, research datasets, screenshot archives, and media collections where keyword search alone is not sufficient.
-
-Get more familiar with Semantixel by knowing its purpose and what it offers:
+The project is tailored for personal knowledge bases, research datasets, screenshot archives, and comprehensive media collections where traditional keyword search is insufficient.
 
 <p align="center">
   <a href="UI/Semantixel WebUI/assets/SemantiXel__AI_Image_Search.mp4">
     <img src="UI/Semantixel WebUI/assets/icon.png" width="200" alt="Watch Demo Video"/>
   </a>
   <br/>
-  <strong><a href="UI/Semantixel WebUI/assets/SemantiXel__AI_Image_Search.mp4">▶️ Watch Demo Video</a></strong>
+  <strong><a href="UI/Semantixel WebUI/assets/SemantiXel__AI_Image_Search.mp4">Watch Demo Video</a></strong>
 </p>
 
 ## Features
 
-- Natural-language image retrieval using CLIP text and image embeddings
-- Visual similarity search for finding related images from a reference image
-- OCR-assisted retrieval for screenshots, documents, and images containing text
-- Video frame extraction and indexing for semantic search across video assets
-- Multi-source media support through source-aware media identifiers
-- Google Drive image integration with OAuth-based authorization and serving
-- Web interface for result browsing, previewing, and graph-based exploration
-- Configurable indexing behavior through the desktop settings application
+- **Natural-Language Image Retrieval**: Leverage CLIP text and image embeddings for intuitive search.
+- **Visual Similarity Search**: Find related images efficiently from a reference image.
+- **OCR-Assisted Retrieval**: Search through screenshots, documents, and images containing text.
+- **Video Frame Extraction and Indexing**: Enable semantic search across video assets by analyzing extracted frames.
+- **Multi-Source Media Support**: Utilize source-aware media identifiers for robust indexing.
+- **Google Drive Integration**: Authenticate via OAuth to seamlessly index and serve cloud-based images.
+- **Interactive Web Interface**: Browse results, preview media, and explore relationships in an intuitive graph-based view.
+- **Configurable Indexing Behavior**: Customize settings effortlessly through the desktop application.
 
 ## How It Works
 
-### High-level workflow
+### High-Level Workflow
 
 <p align="center">
-  <img src="../UI/Semantixel WebUI/assets/architecture.png" alt="SemantiXel Logo" width="600px" height="800px"/>
+  <img src="UI/Semantixel WebUI/assets/architecture.png" alt="SemantiXel Architecture" width="600px" height="800px"/>
 </p>
 
-Semantixel combines three retrieval strategies:
+Semantixel integrates three distinct retrieval strategies:
 
-- Visual retrieval: image and text queries are embedded in a shared CLIP space
-- OCR retrieval: text extracted from images is indexed for semantic and keyword lookup
-- Metadata-aware serving: indexed items are resolved through source-aware media identifiers instead of assuming a local file path
+- **Visual Retrieval**: Embeds image and text queries into a shared CLIP space.
+- **OCR Retrieval**: Extracts and indexes text from images for semantic and BM25 search.
+- **Metadata-Aware Serving**: Resolves indexed items via source-aware media identifiers instead of relying purely on local file paths.
 
 At a high level:
-
-1. Media is discovered from configured local directories and optional connected sources.
-2. Images and extracted video frames are embedded with CLIP.
-3. OCR text is extracted and stored for semantic and BM25 search.
-4. Embeddings and metadata are stored in ChromaDB and the BM25 index.
-5. The Flask API serves search results and media content to the web UI.
+1. Media is discovered from configured local directories and connected sources.
+2. Images and extracted video frames are embedded utilizing CLIP.
+3. OCR text is extracted and stored for both semantic and BM25 search mechanisms.
+4. Embeddings and metadata are managed within ChromaDB and the BM25 index.
+5. The REST API serves search results and media content directly to the web UI.
 
 ## Requirements
 
 - Python 3.11
-- CUDA-capable GPU recommended for indexing and search performance
-- Conda or another Python environment manager
+- CUDA-capable GPU (Recommended for optimal indexing and search performance)
+- Conda or an alternative Python environment manager
 
-Install dependencies:
+## Installation and Setup
 
-```bash
-pip install -r requirements.txt
-```
+### Environment Setup
 
-## Local Setup
-
-Create and activate an environment:
+Create and activate a new environment:
 
 ```bash
 conda create -n semantixel python=3.11 -y
@@ -69,47 +62,51 @@ conda activate semantixel
 pip install -r requirements.txt
 ```
 
-Configure the application:
+### Application Configuration
+
+Launch the settings utility:
 
 ```bash
 python settings.py
 ```
 
-Run a full local scan:
+### Execution
+
+Run a full local scan to index your files:
 
 ```bash
 python main.py --scan
 ```
 
-Start the server:
+Start the application server:
 
 ```bash
 python main.py --serve
 ```
 
-Or run the default combined flow:
+Alternatively, execute the default combined workflow:
 
 ```bash
 python main.py
 ```
 
-## Configuration
+## Configuration Options
 
-Runtime configuration is stored in `config.yaml`. Core settings include:
+Runtime configuration is maintained in `config.yaml`. Key settings include:
 
-- `include_directories`: local directories to scan
-- `exclude_directories`: local directories to skip
-- `batch_size`: indexing batch size
-- `clip`: CLIP provider and checkpoint settings
-- `text_embed`: text embedding provider settings
-- `ocr_provider`: OCR backend selection
-- `google_drive`: optional Google Drive integration settings
+- `include_directories`: Local directories to scan.
+- `exclude_directories`: Local directories to ignore.
+- `batch_size`: The number of items processed per indexing batch.
+- `clip`: Configuration for the CLIP provider and model checkpoints.
+- `text_embed`: Settings for the text embedding provider.
+- `ocr_provider`: Selection of the OCR backend.
+- `google_drive`: Configuration for Google Drive integration.
 
 ## Google Drive Integration
 
-Semantixel can index and serve images from Google Drive in addition to local files.
+Semantixel natively supports indexing and serving images directly from Google Drive.
 
-Example configuration:
+**Example Configuration:**
 
 ```yaml
 google_drive:
@@ -122,53 +119,46 @@ google_drive:
   page_size: 100
 ```
 
-Setup flow:
+**Integration Steps:**
+1. Create a Google Cloud OAuth client of type `Web application`.
+2. Set the redirect URI to `http://localhost:23107/integrations/google_drive/auth/callback`.
+3. Download the client secret JSON file.
+4. Update `config.yaml` accordingly.
+5. Start the application and authenticate via `Connect Google Drive` in the web UI.
+6. Run `python main.py --scan` to commence indexing Drive images.
 
-1. Create a Google Cloud OAuth client of type `Web application`
-2. Configure the redirect URI as `http://localhost:23107/integrations/google_drive/auth/callback`
-3. Download the client secret JSON file
-4. Update `config.yaml`
-5. Start the application and use `Connect Google Drive` in the web UI
-6. Run `python main.py --scan` to index Drive images
+*Note: OAuth secrets and token files must remain secure and excluded from version control.*
 
-Notes:
+## Search Modalities
 
-- The current connector targets Google Drive images first
-- The integration uses OAuth and stores a local token file for subsequent access
-- OAuth secrets and token files should not be committed to source control
+Semantixel supports comprehensive search capabilities:
 
-## Search Modes
-
-Semantixel currently supports:
-
-- Caption search: retrieve images or video frames from natural language descriptions
-- Similar image search: retrieve visually related images from a reference image or media identifier
-- Text content search: retrieve images based on OCR-detected text
-- Graph exploration: inspect similarity relationships between indexed items
+- **Caption Search**: Retrieve images or video frames using natural language descriptions.
+- **Similar Image Search**: Discover visually related images starting from a reference image or identifier.
+- **Text Content Search**: Locate images based on OCR-detected text.
+- **Graph Exploration**: Analyze and inspect similarity relationships between indexed assets.
 
 ## Sample Use Cases
 
-- Search a screenshot archive with natural language queries such as "dashboard with a warning banner" or "terminal output showing build failure"
-- Retrieve visually similar product photos, design references, or duplicate assets from a large image collection
-- Find images that contain specific OCR-detected phrases such as invoice numbers, UI labels, or error messages
-- Explore important moments inside video files by retrieving semantically relevant extracted frames
-- Build a personal or team knowledge base that combines local folders with cloud-hosted image libraries
-- Extend semantic search beyond local storage by connecting Google Drive as an additional media source
+- Query a screenshot archive using natural language such as "dashboard with a warning banner" or "terminal output showing build failure".
+- Locate visually similar product photography, design mockups, or duplicate assets across a large catalog.
+- Identify images containing specific OCR-detected phrases like invoice numbers, application labels, or error messages.
+- Navigate significant segments within video files by retrieving semantically relevant extracted frames.
+- Establish a unified knowledge base combining local storage with cloud-hosted libraries.
 
 ## Repository Structure
 
 Key directories:
 
-- `semantixel/`: backend services, API, providers, and source integrations
-- `settings/`: desktop configuration UI
-- `UI/`: web interface and Flow Launcher integration
-- `docs/`: technical documentation and design notes
-- `db/`: ChromaDB and BM25 artifacts created at runtime
+- `semantixel/`: Core backend services, API endpoints, providers, and source integrations.
+- `settings/`: Desktop configuration interface.
+- `UI/`: Web interface and Flow Launcher integrations.
+- `docs/`: Technical documentation and system design notes.
+- `db/`: ChromaDB and BM25 artifacts generated during runtime.
 
-## Security Notes
+## Security Overview
 
-- Local media access is restricted to configured include directories
-- External URL handling is validated before image-query ingestion
-- Google Drive access is delegated through OAuth-backed API calls
-- OAuth client secrets and token files should remain local and ignored by Git
-
+- Local media access is strictly confined to configured inclusion directories.
+- External URLs are rigorously validated prior to ingestion for image queries.
+- Google Drive access is securely delegated via OAuth 2.0 API calls.
+- Security credentials and tokens must remain local and ignored by Git.

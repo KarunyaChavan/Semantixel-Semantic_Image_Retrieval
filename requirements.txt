@@ -1,7 +1,7 @@
 --extra-index-url https://download.pytorch.org/whl/cu118
 tqdm==4.66.4
-requests==2.32.4
-pillow==10.4.0
+requests==2.33.1
+pillow==12.2.0
 numpy==1.26.4
 torch==2.7.1+cu118
 torchvision==0.22.1+cu118
@@ -32,4 +32,4 @@ python-dotenv==1.0.1
 google-auth-oauthlib==1.2.2
 google-auth==2.38.0
 google-api-python-client==2.163.0
-gunicorn==23.0.0
+gunicorn==26.0.0

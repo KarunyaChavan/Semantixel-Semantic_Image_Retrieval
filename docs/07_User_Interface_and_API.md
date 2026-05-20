@@ -1,27 +1,29 @@
 # User Interface and API
 
-This document describes how users interact with Semantixel via the Web UI and any backend endpoints.
+This document describes the interaction layers for Semantixel, encompassing the REST API and the web frontend.
 
 ## Web UI
 
-- Location: `UI/Semantixel WebUI/` contains a simple HTML/CSS/JS front-end (`index.html`, `styles.css`).
-- The UI supports:
-  - Text search input (natural language queries).
-  - Image upload / image selection for visual queries.
-  - Slider controls for similarity threshold and `top-k` results.
-  - Result grid with clickable images (enlarge, view metadata).
+- Location: The frontend is hosted within `UI/Semantixel WebUI/`, utilizing a modern HTML, CSS, and JavaScript stack.
+- The interface supports:
+  - Natural language search input.
+  - Direct image uploads for visual similarity queries.
+  - Interactive controls for adjusting similarity thresholds and the number of results.
+  - A responsive result grid with detailed metadata previews and an exploration graph.
 
-⚙️ Example client flow:
-
-1. User enters text or uploads an image.
-2. Client sends the query to the backend (e.g., `server.py` REST endpoint or a local handler in `main.py`).
-3. Backend computes embedding, queries index, and returns `top_k` image paths and scores.
-4. Client renders images and allows user to select or refine the query.
+Example client interaction:
+1. The user inputs a query text or uploads a reference image.
+2. The UI sends an asynchronous request to the backend API.
+3. The API processes the query, searches the index, and returns structured JSON containing results and scores.
+4. The client renders the results, updating the grid and exploration views.
 
 ## Backend / API
 
-- `server.py` and `main.py` contain the entry points for running the server or offline scripts. Typical endpoints:
-  - `/search` — POST endpoint that accepts `{ "text": "..." }` or `{ "image": <blob> }` and returns a JSON list of results.
-  - `/health` — simple status check.
+- The API is built with Flask and defined in `semantixel/api/routes.py`. It is served via `wsgi.py`.
+- Key endpoints include:
+  - `/api/search`: Accepts complex query payloads (text, image, threshold constraints) and returns ranked results.
+  - `/api/index/status`: Provides diagnostic information regarding the database and indexed documents.
+  - `/integrations/google_drive/*`: Handles OAuth flows and Drive-specific indexing commands.
+- The API is designed to be fully decoupled from the underlying logic, relying strictly on the `search_service.py` and `index_service.py`.
 
-💡 Note: The exact endpoint names and parameters may vary; inspect `server.py` for the concrete implementation.
+Note: For a comprehensive understanding of request schemas and response formats, refer to the route definitions in `semantixel/api/routes.py`.
