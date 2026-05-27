@@ -30,4 +30,6 @@ scikit-learn==1.7.1
 pydantic-settings==2.7.1
 python-dotenv==1.2.2
 google-auth-oauthlib==1.2.2
+google-auth==2.38.0
+google-api-python-client==2.163.0
 gunicorn==26.0.0

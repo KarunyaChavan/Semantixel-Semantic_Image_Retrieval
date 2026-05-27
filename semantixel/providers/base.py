@@ -4,7 +4,7 @@ from PIL import Image
 
 class BaseModelProvider(ABC):
     """
-    Abstract base class for all model providers (CLIP, OCR, Text Embeddings).
+    Abstract base class for all model providers (CLIP, OCR, Text Embeddings, Audio).
     Ensures a consistent interface across different implementations.
     """
     
@@ -35,4 +35,18 @@ class OCRProvider(BaseModelProvider):
 class TextEmbeddingProvider(BaseModelProvider):
     @abstractmethod
     def get_embeddings(self, text: str) -> List[float]:
+        pass
+
+class AudioProvider(BaseModelProvider):
+    @abstractmethod
+    def transcribe(self, file_path: str) -> Optional[str]:
+        """
+        Transcribe an audio file into text.
+
+        Args:
+            file_path: Path to the input audio file.
+
+        Returns:
+            The transcribed text if successful, otherwise None.
+        """
         pass

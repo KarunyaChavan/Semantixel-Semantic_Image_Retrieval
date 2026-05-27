@@ -17,6 +17,7 @@ class GoogleDriveSource:
 
     def __init__(self):
         self._state: Optional[str] = None
+        self._code_verifier: Optional[str] = None
 
     @property
     def settings(self):
@@ -121,6 +122,7 @@ class GoogleDriveSource:
             include_granted_scopes="true",
             prompt="consent",
         )
+        self._code_verifier = getattr(flow, "code_verifier", None)
         return {"authorization_url": authorization_url, "state": self._state}
 
     def exchange_code(self, code: str, state: Optional[str]) -> None:
@@ -130,7 +132,10 @@ class GoogleDriveSource:
             raise RuntimeError("Invalid OAuth state.")
 
         flow = self._build_flow(state=state)
-        flow.fetch_token(code=code)
+        if hasattr(self, "_code_verifier") and self._code_verifier:
+            flow.fetch_token(code=code, code_verifier=self._code_verifier)
+        else:
+            flow.fetch_token(code=code)
         self._save_credentials(flow.credentials)
 
     def _authorized_session(self):

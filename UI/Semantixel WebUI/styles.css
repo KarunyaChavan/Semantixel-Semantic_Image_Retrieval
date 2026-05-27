@@ -444,7 +444,21 @@ input[type=number]:focus {
     display: block;
 }
 
-.timestamp-badge {
+.results figure.audio-container {
+    background: var(--bg-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.results audio {
+    width: 100%;
+    outline: none;
+}
+
+.timestamp-badge,
+.audio-badge {
     position: absolute;
     bottom: 12px;
     right: 12px;
@@ -459,6 +473,10 @@ input[type=number]:focus {
     letter-spacing: 0.5px;
     pointer-events: none;
     border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.audio-badge {
+    background: rgba(59, 130, 246, 0.85); /* Blueprint accent glow for audio */
 }
 
 /* =========================================

@@ -4,6 +4,9 @@ from semantixel.core.logging import logger
 from semantixel.providers.clip.hf_provider import HFCLIPProvider
 from semantixel.providers.ocr.doctr_provider import DoctrOCRProvider
 from semantixel.providers.text.hf_provider import HFTextEmbeddingProvider
+from semantixel.providers.audio.hf_audio_provider import HFAudioProvider
+from semantixel.providers.audio.faster_whisper_provider import FasterWhisperProvider
+from semantixel.providers.audio.clap_provider import HFAudioCLAPProvider
 
 class ModelManager:
     """
@@ -25,6 +28,8 @@ class ModelManager:
         self._clip_provider = None
         self._ocr_provider = None
         self._text_provider = None
+        self._audio_provider = None
+        self._clap_provider = None
         self._initialized = True
 
     @property
@@ -61,6 +66,25 @@ class ModelManager:
                 self._text_provider = HFTextEmbeddingProvider()
         return self._text_provider
 
+    @property
+    def audio(self):
+        if self._audio_provider is None:
+            provider_type = config.audio.provider
+            if provider_type == "faster_whisper":
+                self._audio_provider = FasterWhisperProvider(checkpoint=config.audio.faster_whisper_model)
+            elif provider_type == "HF_transformers":
+                self._audio_provider = HFAudioProvider(checkpoint=config.audio.HF_transformers_whisper)
+            else:
+                logger.warning(f"Unsupported Audio provider: {provider_type}. Falling back to faster_whisper.")
+                self._audio_provider = FasterWhisperProvider()
+        return self._audio_provider
+
+    @property
+    def clap(self):
+        if self._clap_provider is None:
+            self._clap_provider = HFAudioCLAPProvider()
+        return self._clap_provider
+
     def unload_all(self):
         """Unload all models to free memory/VRAM."""
         if self._clip_provider:
@@ -69,6 +93,10 @@ class ModelManager:
             self._ocr_provider.unload()
         if self._text_provider:
             self._text_provider.unload()
+        if self._audio_provider:
+            self._audio_provider.unload()
+        if self._clap_provider:
+            self._clap_provider.unload()
 
 # Global model manager instance
 model_manager = ModelManager()

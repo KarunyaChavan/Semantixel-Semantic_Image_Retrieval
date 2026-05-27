@@ -24,28 +24,61 @@ class SearchService:
         self.index_service = index_service
         self.face_service = face_service
         self.image_collection = index_service.image_collection
+        self.text_collection = index_service.text_collection
+        self.audio_collection = index_service.audio_collection
         self.bm25_service = index_service.bm25_service
 
     def _process_item_id(self, item_id: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Format an ID to JSON results."""
         if metadata and (
             metadata.get("locator")
             or metadata.get("display_path")
             or metadata.get("source_media_id")
             or metadata.get("source")
+            or metadata.get("source_file")
         ):
+            path_val = (
+                metadata.get("display_path") 
+                or metadata.get("locator") 
+                or metadata.get("source_file") 
+                or item_id
+            )
+            
+            orig_type = metadata.get("type", "image")
+            is_video = orig_type == "video_frame" or any(path_val.lower().endswith(ext) for ext in [".mp4", ".mkv", ".avi", ".mov"])
+            
             result = {
-                "media_id": metadata.get("source_media_id") or item_id,
+                "media_id": metadata.get("source_media_id") or metadata.get("source_file") or item_id,
                 "source": metadata.get("source", "local"),
-                "path": metadata.get("display_path") or metadata.get("locator") or item_id,
-                "display_path": metadata.get("display_path") or metadata.get("locator") or item_id,
-                "type": "video" if metadata.get("type") == "video_frame" else metadata.get("type", "image"),
-                "locator": metadata.get("locator", item_id),
+                "path": path_val,
+                "display_path": path_val,
+                "type": "video" if is_video else orig_type,
+                "locator": metadata.get("locator") or metadata.get("source_file") or item_id,
                 "composite_id": item_id,
             }
             if metadata.get("timestamp") is not None:
                 result["timestamp"] = float(metadata["timestamp"])
+            elif is_video:
+                result["timestamp"] = 0.0
             return result
+
+        if ":::" in item_id:
+            try:
+                base_media_id, postfix = item_id.split(":::", 1)
+                if postfix in ("audio", "ambient"):
+                    parsed = parse_media_id(base_media_id)
+                    is_video = any(parsed.locator.lower().endswith(ext) for ext in [".mp4", ".mkv", ".avi", ".mov"])
+                    return {
+                        "media_id": base_media_id,
+                        "source": parsed.source,
+                        "path": parsed.locator,
+                        "display_path": parsed.locator,
+                        "type": "video" if is_video else "audio",
+                        "timestamp": 0.0 if is_video else None,
+                        "locator": parsed.locator,
+                        "composite_id": item_id
+                    }
+            except ValueError:
+                pass
 
         return parse_media_id(item_id).to_result()
 
@@ -85,22 +118,115 @@ class SearchService:
             return media, self.index_service.google_drive_source.fetch_image(media.locator)
         raise ValueError(f"Unsupported query media source: {media.source}")
 
+    def _normalize_distance(self, raw_distance: float, model_type: str) -> float:
+        """
+        Normalizes raw distance values into a 0–1 similarity score
+        based on model-specific expected similarity ranges.
+
+        The normalization thresholds are determined empirically by
+        analyzing similarity distributions for:
+        
+            - Relevant matches (true positives / semantically related results)
+            - Irrelevant matches (negative or unrelated results)
+
+        Guidelines:
+        - `s_min` should represent the lower boundary of typically
+           relevant similarity scores.
+
+        - `s_max` should represent the upper boundary of highly
+           confident matches.
+
+        This normalization improves consistency across different
+        embedding models and retrieval modalities.
+        """
+        s = 1.0 - raw_distance
+        if model_type == "clip":
+            s_min, s_max = 0.12, 0.30
+        elif model_type == "minilm":
+            s_min, s_max = 0.20, 0.70
+        elif model_type == "clap":
+            s_min, s_max = 0.10, 0.28
+        else:
+            s_min, s_max = 0.0, 1.0
+            
+        s_norm = (s - s_min) / (s_max - s_min) if s_max > s_min else 0.0
+        s_norm = max(0.0, min(1.0, s_norm))
+        return 1.0 - s_norm
+    
+    def _query_collection(self, embedding_fn, collection, query, query_k):
+        """
+        Helper to query a ChromaDB collection with the appropriate embedding function.
+        """
+        embedding = embedding_fn(query)
+
+        return collection.query(
+            query_embeddings=[embedding],
+            n_results=query_k,
+            include=["distances", "metadatas"]
+        )
+    
     def semantic_text_search(self, query: str, top_k: int = 5, threshold: float = 0.0, media_type: str = "image") -> List[Dict[str, Any]]:
         """
-        Performs semantic search on images using CLIP text embeddings.
+        Performs semantic search across both images and transcribed audio/OCR texts
         """
-        logger.info(f"Semantic Text Search: {query} (top_k={top_k}, type={media_type})")
-        text_embedding = model_manager.clip.get_text_embeddings(query)
-        
-        # Increase pool for deduplication
+        logger.info(f"Unified Semantic Search: {query} (top_k={top_k}, type={media_type})")
         query_k = top_k * 10
-        results = self.image_collection.query(
-            query_embeddings=[text_embedding],
-            n_results=query_k,
-            include=["distances", "metadatas"],
+        
+        # 1. Image Collection (CLIP)
+        visual_results = self._query_collection(
+            model_manager.clip.get_text_embeddings,
+            self.image_collection,
+            query,
+            query_k
         )
         
-        return self._filter_results(results, top_k, threshold, media_type)
+        # 2. Text Collection (MiniLM)
+        text_results = self._query_collection(
+            model_manager.text_embed.get_embeddings,
+            self.text_collection,
+            query,
+            query_k
+        )
+        
+        # 3. Ambient Audio Collection (CLAP)
+        ambient_results = self._query_collection(
+            model_manager.clap.get_text_embeddings,
+            self.audio_collection,
+            query,
+            query_k
+        )
+        
+        # Zip and Merge
+        combined_items = []
+        if visual_results["ids"] and visual_results["ids"][0]:
+            for p, d, m in zip(visual_results["ids"][0], visual_results["distances"][0], visual_results["metadatas"][0]):
+                d_norm = self._normalize_distance(d, "clip")
+                combined_items.append((p, d_norm, m))
+                
+        if text_results["ids"] and text_results["ids"][0]:
+            for p, d, m in zip(text_results["ids"][0], text_results["distances"][0], text_results["metadatas"][0]):
+                d_norm = self._normalize_distance(d, "minilm")
+                combined_items.append((p, d_norm, m))
+                
+        if ambient_results["ids"] and ambient_results["ids"][0]:
+            for p, d, m in zip(ambient_results["ids"][0], ambient_results["distances"][0], ambient_results["metadatas"][0]):
+                d_norm = self._normalize_distance(d, "clap")
+                combined_items.append((p, d_norm, m))
+                
+        # Sort combined by distance ascending (lower distance = higher similarity)
+        combined_items.sort(key=lambda x: x[1])
+        
+        # Re-pack into ChromaDB native format for the filter function
+        merged_results = {
+            "ids": [[item[0] for item in combined_items]],
+            "distances": [[item[1] for item in combined_items]],
+            "metadatas": [[item[2] for item in combined_items]]
+        }
+        
+        if not merged_results["ids"] or not merged_results["ids"][0]:
+            return []
+            
+        return self._filter_results(merged_results, top_k, threshold, media_type)
 
     def semantic_image_search(self, image_path: str, top_k: int = 5, threshold: float = 0.0, media_type: str = "all") -> List[Dict[str, Any]]:
         """CLIP Image similarity search."""
@@ -145,6 +271,7 @@ class SearchService:
         similarities = [1 - d for d in distances]
         final_results = []
         video_counts = {}
+        seen_media_ids = set()
         MAX_FRAMES_PER_VIDEO = 1
         
         for item_id, s, metadata in zip(ids, similarities, metadatas):
@@ -154,21 +281,24 @@ class SearchService:
             if exclude_path and item_id == exclude_path:
                 continue
                 
-            item = self._process_item_id(item_id, metadata)
-            is_video = item["type"] == "video"
-            if media_type == "image" and is_video:
-                continue
-            if media_type == "video" and not is_video:
+            item_info = self._process_item_id(item_id, metadata)
+            item_type = item_info["type"]
+            
+            if media_type != "all" and media_type != item_type:
                 continue
                 
-            if is_video:
-                base_video_path = item["media_id"]
+            if item_type == "video":
+                base_video_path = item_id.split(":::")[0]
                 count = video_counts.get(base_video_path, 0)
                 if count >= MAX_FRAMES_PER_VIDEO:
                     continue
                 video_counts[base_video_path] = count + 1
+            else:
+                if item_info["media_id"] in seen_media_ids:
+                    continue
+                seen_media_ids.add(item_info["media_id"])
             
-            final_results.append(item)
+            final_results.append(item_info)
             
             if len(final_results) >= top_k:
                 break

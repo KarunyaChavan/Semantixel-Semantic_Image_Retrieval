@@ -6,10 +6,10 @@ from semantixel.core.logging import logger
 
 def scan_directory(directory, exclude_directories):
     """
-    Recursively scans a directory for image and video files, excluding any directories specified.
+    Recursively scans a directory for audio, image and video files, excluding any directories specified.
     """
-    media_extensions = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".mp4", ".mkv", ".avi", ".mov"}
-    images = []
+    media_extensions = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".mp4", ".mkv", ".avi", ".mov", ".mp3", ".wav", ".flac", ".m4a", ".aac"}
+    files = []
     try:
         if not os.path.isdir(directory):
             return []
@@ -21,19 +21,19 @@ def scan_directory(directory, exclude_directories):
                     and not entry.name.startswith("._")
                     and entry.name.lower().endswith(tuple(media_extensions))
                 ):
-                    images.append(entry.path)
+                    files.append(entry.path)
                 elif entry.is_dir():
                     # Check if this directory is in the exclude list
                     if not any(
                         os.path.commonpath([os.path.abspath(entry.path), os.path.abspath(excl)]) == os.path.abspath(excl)
                         for excl in exclude_directories
                     ):
-                        images.extend(scan_directory(entry.path, exclude_directories))
+                        files.extend(scan_directory(entry.path, exclude_directories))
     except PermissionError:
         logger.debug(f"Permission denied: {directory}")
     except Exception as e:
         logger.error(f"Error scanning {directory}: {e}")
-    return images
+    return files
 
 def fast_scan_for_media(directories, exclude_directories=None):
     """
@@ -43,7 +43,7 @@ def fast_scan_for_media(directories, exclude_directories=None):
         exclude_directories = []
 
     start_time = time.time()
-    all_images = []
+    all_files = []
 
     cpu_count = os.cpu_count() or 1
     with tqdm(total=len(directories), desc="Scanning directories") as pbar:
@@ -55,11 +55,11 @@ def fast_scan_for_media(directories, exclude_directories=None):
             for future in as_completed(future_to_dir):
                 d = future_to_dir[future]
                 try:
-                    images = future.result()
-                    all_images.extend(images)
+                    files = future.result()
+                    all_files.extend(files)
                     pbar.update()
                 except Exception as e:
                     logger.error(f"Error processing {d}: {e}")
 
     end_time = time.time()
-    return all_images, end_time - start_time
+    return all_files, end_time - start_time
