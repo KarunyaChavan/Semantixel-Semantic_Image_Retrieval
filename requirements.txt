@@ -8,7 +8,7 @@ torchvision==0.22.1+cu118
 chromadb==0.4.24
 einops==0.8.0
 python-doctr==1.0.0
-PyYAML==6.0.1
+PyYAML==6.0.3
 clip-benchmark==1.6.2
 datasets==4.0.0
 open-clip-torch==3.0.0
