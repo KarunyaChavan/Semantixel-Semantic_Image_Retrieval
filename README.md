@@ -21,6 +21,7 @@ The project is tailored for personal knowledge bases, research datasets, screens
 - **Multi-Source Media Support**: Utilize source-aware media identifiers for robust indexing.
 - **Google Drive Integration**: Authenticate via OAuth to seamlessly index and serve cloud-based images.
 - **Interactive Web Interface**: Browse results, preview media, and explore relationships in an intuitive graph-based view.
+- **gRPC Inference Service**: Standalone CLIP embedding and OCR extraction server for polyglot services (Go, Rust, etc.).
 - **Configurable Indexing Behavior**: Customize settings effortlessly through the desktop application.
 
 ## How It Works
@@ -43,12 +44,14 @@ At a high level:
 3. OCR text is extracted and stored for both semantic and BM25 search mechanisms.
 4. Embeddings and metadata are managed within ChromaDB and the BM25 index.
 5. The REST API serves search results and media content directly to the web UI.
+6. A gRPC inference server runs alongside Flask, exposing CLIP and OCR as language-agnostic RPCs for future Go services.
 
 ## Requirements
 
 - Python 3.11
 - CUDA-capable GPU (Recommended for optimal indexing and search performance)
 - Conda or an alternative Python environment manager
+- `grpcio` and `grpcio-tools` (included in `requirements.txt`)
 
 ## Installation and Setup
 
@@ -82,6 +85,12 @@ Start the application server:
 
 ```bash
 python main.py --serve
+```
+
+Start the gRPC inference server (separate process — must run alongside Flask if Go services are consuming it):
+
+```bash
+python main.py --grpc
 ```
 
 Alternatively, execute the default combined workflow:
@@ -150,9 +159,11 @@ Semantixel supports comprehensive search capabilities:
 
 Key directories:
 
-- `semantixel/`: Core backend services, API endpoints, providers, and source integrations.
+- `semantixel/`: Core backend services, API endpoints, providers, source integrations, and gRPC server.
 - `settings/`: Desktop configuration interface.
 - `UI/`: Web interface and Flow Launcher integrations.
+- `proto/`: Protobuf contract for the gRPC inference service.
+- `scripts/`: Utility scripts (e.g., proto stub generation).
 - `docs/`: Technical documentation and system design notes.
 - `db/`: ChromaDB and BM25 artifacts generated during runtime.
 
