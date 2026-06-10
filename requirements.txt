@@ -31,3 +31,5 @@ pydantic-settings==2.7.1
 python-dotenv==1.2.2
 google-auth-oauthlib==1.2.2
 gunicorn==26.0.0
+grpcio==1.71.0
+grpcio-tools==1.71.0

@@ -15,11 +15,18 @@ def main():
     parser.add_argument("--open-config-file", action="store_true", help="Open config.yaml")
     parser.add_argument("--serve", action="store_true", help="Start the Flask server")
     parser.add_argument("--scan", action="store_true", help="Perform a full media scan and index update")
+    parser.add_argument("--grpc", action="store_true", help="Start the gRPC Inference Server")
+    parser.add_argument("--grpc-port", type=int, default=50051, help="gRPC server port (default: 50051)")
     
     args = parser.parse_args()
     
     # Initialize service only if needed to avoid loading too much
     index_service = None
+
+    if args.grpc:
+        from semantixel.grpc_server import serve_forever
+        serve_forever(port=args.grpc_port)
+        return
 
     if args.settings:
         import subprocess
