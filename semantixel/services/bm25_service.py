@@ -79,7 +79,11 @@ class BM25Service:
             if postfix in {"audio", "video"}:
                 return postfix
 
-            return "unknown"
+            try:
+                float(postfix)
+                return "video"
+            except ValueError:
+                return "unknown"
     
     def search(self, query: str, top_k: int = 5, threshold: float = 0.0, media_type: str = "all") -> List[str]:
         """
