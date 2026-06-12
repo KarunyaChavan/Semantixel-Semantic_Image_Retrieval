@@ -181,6 +181,8 @@ class IndexService:
             audio_config = config.audio
             if audio_config.enabled:
                 for media in audio_items:
+                    is_video = media.locator.lower().endswith(tuple(self.video_extensions))
+                    derived_type = "video" if is_video else "audio"
                     # Duration gate — skip files that exceed the configured limit
                     if audio_config.max_duration_seconds > 0:
                         try:
@@ -218,7 +220,8 @@ class IndexService:
                                             "source_media_id": media.media_id,
                                             "locator": media.locator,
                                             "display_path": media.display_path,
-                                            "type": "audio"
+                                            "type": derived_type,
+                                            "subtype": "transcript"
                                         }]
                                     )
                                     self.bm25_service.add_document(transcript_id, transcript)
@@ -250,7 +253,8 @@ class IndexService:
                                             "source_media_id": media.media_id,
                                             "locator": media.locator,
                                             "display_path": media.display_path,
-                                            "type": "audio"
+                                            "type": derived_type,
+                                            "subtype": "ambient"
                                         }]
                                     )
                                 except Exception as exc:

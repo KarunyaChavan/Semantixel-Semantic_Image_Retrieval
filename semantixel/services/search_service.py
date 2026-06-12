@@ -43,21 +43,18 @@ class SearchService:
                 or item_id
             )
             
-            orig_type = metadata.get("type", "image")
-            is_video = orig_type == "video_frame" or any(path_val.lower().endswith(ext) for ext in [".mp4", ".mkv", ".avi", ".mov"])
-            
             result = {
                 "media_id": metadata.get("source_media_id") or metadata.get("source_file") or item_id,
                 "source": metadata.get("source", "local"),
                 "path": path_val,
                 "display_path": path_val,
-                "type": "video" if is_video else orig_type,
+                "type": metadata.get("type", "image"),
                 "locator": metadata.get("locator") or metadata.get("source_file") or item_id,
                 "composite_id": item_id,
             }
             if metadata.get("timestamp") is not None:
                 result["timestamp"] = float(metadata["timestamp"])
-            elif is_video:
+            elif metadata.get("type") == "video_frame":
                 result["timestamp"] = 0.0
             return result
 
