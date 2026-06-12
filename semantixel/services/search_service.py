@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import requests
 from PIL import Image
 
+from semantixel.core.config import config
 from semantixel.media import parse_media_id
 from semantixel.services.model_manager import model_manager
 from semantixel.services.index_service import IndexService
@@ -157,12 +158,15 @@ class SearchService:
         )
         
         # 3. Ambient Audio Collection (CLAP)
-        ambient_results = self._query_collection(
-            model_manager.clap.get_text_embeddings,
-            self.audio_collection,
-            query,
-            query_k
-        )
+        if config.audio.clap_enabled:
+            ambient_results = self._query_collection(
+                model_manager.clap.get_text_embeddings,
+                self.audio_collection,
+                query,
+                query_k
+            )
+        else:
+            ambient_results = {"ids": [[]], "distances": [[]], "metadatas": [[]]}
         
         # Zip and Merge
         combined_items = []
