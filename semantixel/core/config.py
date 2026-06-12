@@ -39,13 +39,21 @@ class TextEmbedConfig(BaseModel):
 
 class AudioConfig(BaseModel):
     """
-    Configuration for audio transcription models.
+    Configuration for audio transcription and CLAP embedding models.
 
     Attributes:
+        enabled: Master switch to enable/disable all audio processing.
+        transcription_enabled: Enable/disable transcription indexing.
+        clap_enabled: Enable/disable CLAP ambient audio embedding.
+        max_duration_seconds: Skip audio/video files longer than this (0 = no limit).
         HF_transformers_whisper: Hugging Face Whisper model checkpoint.
         faster_whisper_model: Faster Whisper model identifier.
         provider: Transcription provider backend.
     """
+    enabled: bool = True
+    transcription_enabled: bool = True
+    clap_enabled: bool = True
+    max_duration_seconds: float = 0
     HF_transformers_whisper: str = "openai/whisper-tiny"
     faster_whisper_model: str = "tiny.en"
     provider: str = "faster_whisper"

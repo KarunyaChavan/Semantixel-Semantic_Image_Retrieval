@@ -1,4 +1,5 @@
 import os
+import librosa
 import chromadb
 from tqdm import tqdm
 from typing import List
@@ -177,50 +178,88 @@ class IndexService:
             flush_batch() 
             
             # PHASE 2: Process Audio Constraints Sequentially
-            for media in audio_items:
-                # 1. Transcript indexing
-                transcript_id = f"{media.media_id}:::audio"
-                transcript_results = self.text_collection.get(ids=[transcript_id])
+            audio_config = config.audio
+            if audio_config.enabled:
+                for media in audio_items:
+                    # Duration gate — skip files that exceed the configured limit
+                    if audio_config.max_duration_seconds > 0:
+                        try:
+                            duration = librosa.get_duration(path=media.locator)
+                            if duration > audio_config.max_duration_seconds:
+                                logger.debug(f"Skipping {media.display_path} ({duration:.1f}s > {audio_config.max_duration_seconds}s)")
+                                pbar.update(1)
+                                continue
+                        except Exception as exc:
+                            logger.warning(f"Could not determine duration for {media.display_path}: {exc}")
+
+                    # 1. Transcript indexing
+                    if audio_config.transcription_enabled:
+                        transcript_id = f"{media.media_id}:::audio"
+                        try:
+                            transcript_results = self.text_collection.get(ids=[transcript_id])
+                        except Exception:
+                            transcript_results = {"ids": []}
+
+                        if not transcript_results["ids"]:
+                            try:
+                                transcript = model_manager.audio.transcribe(media.locator)
+                            except Exception as exc:
+                                logger.warning(f"Transcription failed for {media.display_path}: {exc}")
+                                transcript = None
+
+                            if transcript and transcript.strip():
+                                try:
+                                    text_embedding = model_manager.text_embed.get_embeddings(transcript)
+                                    self.text_collection.upsert(
+                                        ids=[transcript_id],
+                                        embeddings=[text_embedding],
+                                        metadatas=[{
+                                            "source": media.source,
+                                            "source_media_id": media.media_id,
+                                            "locator": media.locator,
+                                            "display_path": media.display_path,
+                                            "type": "audio"
+                                        }]
+                                    )
+                                    self.bm25_service.add_document(transcript_id, transcript)
+                                except Exception as exc:
+                                    logger.warning(f"Transcript embedding/indexing failed for {media.display_path}: {exc}")
                 
-                if not transcript_results["ids"]:
-                    transcript = model_manager.audio.transcribe(media.locator)
-                    # Only index if we actually got text back (handles silent videos)
-                    if transcript and transcript.strip():
-                        text_embedding = model_manager.text_embed.get_embeddings(transcript)
-                        self.text_collection.upsert(
-                            ids=[transcript_id],
-                            embeddings=[text_embedding],
-                            metadatas=[{
-                                "source": media.source,
-                                "source_media_id": media.media_id,
-                                "locator": media.locator,
-                                "display_path": media.display_path,
-                                "type": "audio"
-                            }]
-                        )
-                        self.bm25_service.add_document(transcript_id, transcript)
+                    # 2. Ambient sound indexing
+                    if audio_config.clap_enabled:
+                        ambient_id = f"{media.media_id}:::ambient"
+                        try:
+                            ambient_results = self.audio_collection.get(ids=[ambient_id])
+                        except Exception:
+                            ambient_results = {"ids": []}
+
+                        if not ambient_results["ids"]:
+                            try:
+                                ambient_embedding = model_manager.clap.get_audio_embeddings(media.locator)
+                            except Exception as exc:
+                                logger.warning(f"CLAP embedding failed for {media.display_path}: {exc}")
+                                ambient_embedding = None
+
+                            if ambient_embedding and any(v != 0 for v in ambient_embedding):
+                                try:
+                                    self.audio_collection.upsert(
+                                        ids=[ambient_id],
+                                        embeddings=[ambient_embedding],
+                                        metadatas=[{
+                                            "source": media.source,
+                                            "source_media_id": media.media_id,
+                                            "locator": media.locator,
+                                            "display_path": media.display_path,
+                                            "type": "audio"
+                                        }]
+                                    )
+                                except Exception as exc:
+                                    logger.warning(f"CLAP index upsert failed for {media.display_path}: {exc}")
                 
-                # 2. Ambient sound indexing
-                ambient_id = f"{media.media_id}:::ambient"
-                ambient_results = self.audio_collection.get(ids=[ambient_id])
-                
-                if not ambient_results["ids"]:
-                    ambient_embedding = model_manager.clap.get_audio_embeddings(media.locator)
-                    # Only index if the embedding is valid (not a zero-vector from a silent file)
-                    if ambient_embedding and any(v != 0 for v in ambient_embedding):
-                        self.audio_collection.upsert(
-                            ids=[ambient_id],
-                            embeddings=[ambient_embedding],
-                            metadatas=[{
-                                    "source": media.source,
-                                    "source_media_id": media.media_id,
-                                    "locator": media.locator,
-                                    "display_path": media.display_path,
-                                    "type": "audio"
-                            }]
-                        )
-                
-                pbar.update(1)
+                    pbar.update(1)
+            else:
+                for _ in audio_items:
+                    pbar.update(1)
                 
             self.bm25_service.rebuild()
 
