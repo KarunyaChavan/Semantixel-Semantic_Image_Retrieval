@@ -305,10 +305,10 @@
                         } else if (item.type === 'audio') {
                             resultElement = document.createElement('figure');
                             resultElement.className = 'audio-container';
-                            resultElement.dataset.originalPath = item.path;
+                            resultElement.dataset.originalPath = item.display_path || item.path;
 
                             const audio = document.createElement('audio');
-                            audio.src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(item.path)}`;
+                            audio.src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(item.media_id || item.path)}`;
                             audio.controls = true;
                             audio.preload = "metadata";
 
@@ -322,7 +322,7 @@
                             resultElement.onclick = (e) => {
                                 if (e.target !== audio) {
                                     highlightSelectedImage(resultElement);
-                                    showImagePath(item.path);
+                                    showImagePath(item.display_path || item.path, item.media_id || item.path);
                                 }
                             };
                         } else {
