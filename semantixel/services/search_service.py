@@ -115,40 +115,11 @@ class SearchService:
             return media, self.index_service.google_drive_source.fetch_image(media.locator)
         raise ValueError(f"Unsupported query media source: {media.source}")
 
-    def _normalize_distance(self, raw_distance: float, model_type: str) -> float:
-        """
-        Normalizes raw distance values into a 0–1 similarity score
-        based on model-specific expected similarity ranges.
-
-        The normalization thresholds are determined empirically by
-        analyzing similarity distributions for:
-        
-            - Relevant matches (true positives / semantically related results)
-            - Irrelevant matches (negative or unrelated results)
-
-        Guidelines:
-        - `s_min` should represent the lower boundary of typically
-           relevant similarity scores.
-
-        - `s_max` should represent the upper boundary of highly
-           confident matches.
-
-        This normalization improves consistency across different
-        embedding models and retrieval modalities.
-        """
+    @staticmethod
+    def _cosine_to_similarity(raw_distance: float) -> float:
+        """Convert raw cosine distance to a 0-1 similarity score."""
         s = 1.0 - raw_distance
-        if model_type == "clip":
-            s_min, s_max = 0.12, 0.30
-        elif model_type == "minilm":
-            s_min, s_max = 0.20, 0.70
-        elif model_type == "clap":
-            s_min, s_max = 0.10, 0.28
-        else:
-            s_min, s_max = 0.0, 1.0
-            
-        s_norm = (s - s_min) / (s_max - s_min) if s_max > s_min else 0.0
-        s_norm = max(0.0, min(1.0, s_norm))
-        return 1.0 - s_norm
+        return max(0.0, min(1.0, s))
     
     def _query_collection(self, embedding_fn, collection, query, query_k):
         """
@@ -197,21 +168,18 @@ class SearchService:
         combined_items = []
         if visual_results["ids"] and visual_results["ids"][0]:
             for p, d, m in zip(visual_results["ids"][0], visual_results["distances"][0], visual_results["metadatas"][0]):
-                d_norm = self._normalize_distance(d, "clip")
-                combined_items.append((p, d_norm, m))
+                combined_items.append((p, self._cosine_to_similarity(d), m))
                 
         if text_results["ids"] and text_results["ids"][0]:
             for p, d, m in zip(text_results["ids"][0], text_results["distances"][0], text_results["metadatas"][0]):
-                d_norm = self._normalize_distance(d, "minilm")
-                combined_items.append((p, d_norm, m))
+                combined_items.append((p, self._cosine_to_similarity(d), m))
                 
         if ambient_results["ids"] and ambient_results["ids"][0]:
             for p, d, m in zip(ambient_results["ids"][0], ambient_results["distances"][0], ambient_results["metadatas"][0]):
-                d_norm = self._normalize_distance(d, "clap")
-                combined_items.append((p, d_norm, m))
+                combined_items.append((p, self._cosine_to_similarity(d), m))
                 
-        # Sort combined by distance ascending (lower distance = higher similarity)
-        combined_items.sort(key=lambda x: x[1])
+        # Sort combined by similarity descending
+        combined_items.sort(key=lambda x: x[1], reverse=True)
         
         # Re-pack into ChromaDB native format for the filter function
         merged_results = {
@@ -239,6 +207,7 @@ class SearchService:
         
         # Exclude self if top result is remarkably similar
         exclude_path = query_media.media_id if query_media is not None else None
+        results["distances"][0] = [self._cosine_to_similarity(d) for d in results["distances"][0]]
         return self._filter_results(results, top_k, threshold, media_type, exclude_path=exclude_path)
 
     def keyword_search(self, query: str, top_k: int = 5, threshold: float = 0.0, media_type: str = "all") -> List[Dict[str, Any]]:
@@ -260,12 +229,11 @@ class SearchService:
     def _filter_results(self, results: Dict[str, Any], top_k: int, threshold: float, media_type: str, exclude_path: Optional[str] = None) -> List[Dict[str, Any]]:
         """Filtering and deduplication (limit frames per video)."""
         ids = results["ids"][0]
-        distances = results["distances"][0]
+        similarities = results["distances"][0]
         metadatas = results.get("metadatas", [[]])[0]
         if len(metadatas) != len(ids):
             metadatas = [None] * len(ids)
         
-        similarities = [1 - d for d in distances]
         final_results = []
         video_counts = {}
         seen_media_ids = set()
