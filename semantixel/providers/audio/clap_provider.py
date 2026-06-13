@@ -3,7 +3,8 @@ import librosa
 from typing import List, Union
 from transformers import ClapModel, ClapProcessor
 from semantixel.providers.base import BaseModelProvider
-from semantixel.core.logging import logger
+from semantixel.core.logging import logger, log_exception
+from semantixel.utils import has_audio_stream
 
 DEFAULT_CLAP_CHECKPOINT = "laion/clap-htsat-unfused"
 
@@ -36,18 +37,19 @@ class HFAudioCLAPProvider(BaseModelProvider):
             self.load()
             
         try:
+            if not has_audio_stream(audio_path):
+                logger.debug(f"No audio stream found in {audio_path}, skipping CLAP embedding")
+                return [0.0] * 512
             y, sr = librosa.load(audio_path, sr=48000, duration=10.0)
             inputs = self.processor(audios=y, sampling_rate=48000, return_tensors="pt").to(self.device)
             with torch.no_grad():
                 outputs = self.model.get_audio_features(**inputs)
             
-            # Normalize vector for cosine similarity math
             embedding = outputs / outputs.norm(dim=-1, keepdim=True)
             return embedding[0].cpu().numpy().tolist()
             
-        except Exception as e:
-            logger.error(f"Error getting CLAP audio embedding for {audio_path}: {e}")
-            # CLAP dim is 512, return empty vector to shield ChromaDB
+        except Exception:
+            log_exception(logger, f"Error getting CLAP audio embedding for {audio_path}")
             return [0.0] * 512
 
     def get_text_embeddings(self, text: str) -> list:

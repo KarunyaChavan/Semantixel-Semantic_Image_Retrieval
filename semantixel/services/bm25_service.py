@@ -34,10 +34,13 @@ class BM25Service:
             logger.info("Initializing new BM25 index")
             self._reset()
     
-    def _reset(self):
+    def reset(self):
         self.bm25 = None
         self.documents = []
         self.doc_ids = []
+
+    def _reset(self):
+        self.reset()
     
     def add_document(self, doc_id: str, text: str):
         """Add or update a document in the index"""
@@ -85,6 +88,29 @@ class BM25Service:
             except ValueError:
                 return "unknown"
     
+    def rebuild_from_collection(self, collection, save: bool = True):
+        """Rebuild the BM25 index from a ChromaDB collection's stored documents.
+
+        Reads ``ids`` and ``documents`` from the collection, replaces the
+        in-memory document store, and calls :meth:`rebuild`. This ensures
+        the keyword index always mirrors the current text collection,
+        automatically evicting stale entries from renamed or deleted files.
+
+        Args:
+            collection: A ChromaDB collection with ``documents`` stored.
+            save: Whether to persist the rebuilt index to disk.
+        """
+        data = collection.get(include=["documents"])
+        ids = data.get("ids", [])
+        docs = data.get("documents", [])
+        self.documents = []
+        self.doc_ids = []
+        for doc_id, doc_text in zip(ids, docs):
+            if doc_text:
+                self.documents.append(doc_text)
+                self.doc_ids.append(doc_id)
+        self.rebuild(save=save)
+
     def search(self, query: str, top_k: int = 5, threshold: float = 0.0, media_type: str = "all") -> List[str]:
         """
         Search for documents matching the query.

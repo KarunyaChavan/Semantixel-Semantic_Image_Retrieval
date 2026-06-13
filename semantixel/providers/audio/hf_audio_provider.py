@@ -3,7 +3,7 @@ from typing import Optional, Union, List
 from transformers import pipeline
 import transformers
 from semantixel.providers.base import AudioProvider
-from semantixel.core.logging import logger
+from semantixel.core.logging import logger, log_exception
 
 transformers.logging.set_verbosity_error()
 
@@ -48,20 +48,19 @@ class HFAudioProvider(AudioProvider):
             if "cuda" in self.device_mapped:
                 torch.cuda.empty_cache()
 
-    def transcribe(self, file_path: str) -> Optional[str]:
+    def transcribe(self, file_path: str, max_duration: float = 60.0) -> Optional[str]:
         """
         Transcribes the provided audio file path.
         """
         self.load()
         try:
             import librosa
-            # Whisper natively requires 16000Hz sampling rate.
-            # We restrict to exactly the first 20 seconds to get semantic context instantly!
-            y, sr = librosa.load(file_path, sr=16000, duration=20.0)
-            
+            duration = None if max_duration <= 0 else max_duration
+            y, sr = librosa.load(file_path, sr=16000, duration=duration)
+
             audio_input = {"raw": y, "sampling_rate": sr}
             result = self.pipe(audio_input, return_timestamps=True, chunk_length_s=30)
             return result.get("text", "").strip()
-        except Exception as e:
-            logger.error(f"Error transcribing audio file {file_path}: {e}")
+        except Exception:
+            log_exception(logger, f"Error transcribing {file_path}")
             return None

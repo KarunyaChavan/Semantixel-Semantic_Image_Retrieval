@@ -1,7 +1,8 @@
 import torch
 from typing import Optional
 from semantixel.providers.base import AudioProvider
-from semantixel.core.logging import logger
+from semantixel.core.logging import logger, log_exception
+from semantixel.utils import has_audio_stream
 
 DEFAULT_WHISPER_CHECKPOINT = "tiny.en"
 
@@ -37,29 +38,30 @@ class FasterWhisperProvider(AudioProvider):
             if self.device == "cuda":
                 torch.cuda.empty_cache()
 
-    def transcribe(self, file_path: str) -> Optional[str]:
+    def transcribe(self, file_path: str, max_duration: float = 60.0) -> Optional[str]:
         """
         Transcribes the provided audio file path natively.
         """
         self.load()
         try:
             import librosa
-            # Capture first 20 seconds to understand the context of the audio file and ensure fast processing
-            y, sr = librosa.load(file_path, sr=16000, duration=20.0)
-            
-            # faster_whisper Model.transcribe accepts a 1D numpy array directly
+            if not has_audio_stream(file_path):
+                logger.debug(f"No audio stream found in {file_path}, skipping transcription")
+                return None
+            duration = None if max_duration <= 0 else max_duration
+            y, sr = librosa.load(file_path, sr=16000, duration=duration)
+
             segments, info = self.model.transcribe(y, beam_size=5)
-            
-            # The segments object is a generator, we must exhaust it
+
             text = " ".join([segment.text for segment in segments])
             return text.strip()
         except Exception as e:
             if "cublas" in str(e).lower() and self.device == "cuda":
-                logger.warning(f"CUDA transcription failed ({e}). Retrying on CPU fallback.")
+                logger.warning(f"CUDA transcription failed: {e}. Retrying on CPU fallback.")
                 self.unload()
                 self.device = "cpu"
                 self.compute_type = "int8"
-                return self.transcribe(file_path)
-            
-            logger.error(f"Error transcribing audio file {file_path} via Faster Whisper: {e}")
+                return self.transcribe(file_path, max_duration)
+
+            log_exception(logger, f"Error transcribing {file_path} via Faster Whisper")
             return None

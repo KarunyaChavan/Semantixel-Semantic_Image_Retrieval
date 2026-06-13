@@ -73,8 +73,7 @@ class IndexService:
         """
         batch_size = config.batch_size
         deep_scan = config.deep_scan
-        
-        # Priority De-coupling: Index fast visuals instantly, reserve audio indexing for very end
+
         audio_items = [m for m in media_items if m.locator.lower().endswith(tuple(self.audio_extensions | self.video_extensions))]
         visual_items = [m for m in media_items if not m.locator.lower().endswith(tuple(self.audio_extensions))]
         
@@ -111,11 +110,9 @@ class IndexService:
                         self.text_collection.upsert(
                             ids=[current_id],
                             embeddings=[text_embedding],
-                            metadatas=[metadata]
+                            metadatas=[metadata],
+                            documents=[text]
                         )
-                        
-                        # Keyword Search
-                        self.bm25_service.add_document(current_id, text)
                 
                 processing_inputs.clear()
                 processing_ids.clear()
@@ -204,7 +201,7 @@ class IndexService:
 
                         if not transcript_results["ids"]:
                             try:
-                                transcript = model_manager.audio.transcribe(media.locator)
+                                transcript = model_manager.audio.transcribe(media.locator, audio_config.transcription_max_duration)
                             except Exception as exc:
                                 logger.warning(f"Transcription failed for {media.display_path}: {exc}")
                                 transcript = None
@@ -222,9 +219,9 @@ class IndexService:
                                             "display_path": media.display_path,
                                             "type": derived_type,
                                             "subtype": "transcript"
-                                        }]
+                                        }],
+                                        documents=[transcript]
                                     )
-                                    self.bm25_service.add_document(transcript_id, transcript)
                                 except Exception as exc:
                                     logger.warning(f"Transcript embedding/indexing failed for {media.display_path}: {exc}")
                 
@@ -265,7 +262,7 @@ class IndexService:
                 for _ in audio_items:
                     pbar.update(1)
                 
-            self.bm25_service.rebuild()
+            self.bm25_service.rebuild_from_collection(self.text_collection)
 
     def cleanup_index(self, valid_media_items: List[MediaDescriptor]):
         """

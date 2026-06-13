@@ -57,6 +57,7 @@ class AudioConfig(BaseModel):
     HF_transformers_whisper: str = "openai/whisper-tiny"
     faster_whisper_model: str = "tiny.en"
     provider: str = "faster_whisper"
+    transcription_max_duration: float = 60.0
     
 class GoogleDriveConfig(BaseModel):
     """

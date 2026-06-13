@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import time
 import os
 import io
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from urllib.parse import urlparse
 
 import requests
@@ -17,10 +17,28 @@ from semantixel.services.face_service import FaceService
 from semantixel.core.logging import logger
 
 class SearchService:
+    """Aggregated search across image, text, and audio modalities.
+
+    Each modality produces cosine distances in a different characteristic
+    range. ``MODALITY_RANGES`` stores the typical similarity interval
+    (``[min_s, max_s]``) for relevant results per modality. The
+    :meth:`_normalize_distance` helper maps raw cosine distances into
+    comparable ``[0, 1]`` scores so results from CLIP, MiniLM, and CLAP
+    can be merged and ranked fairly in a single list.
+
+    ``MODALITY_RANGES`` keys:
+
+    * ``clip``   — visual / text CLIP embeddings (dim 512)
+    * ``minilm`` — sentence-transformer MiniLM  (dim 384)
+    * ``clap``   — CLAP audio / text embeddings (dim 512)
     """
-    Core search logic for semantic retrieval and graph generation.
-    """
-    
+
+    MODALITY_RANGES = {
+        "clip":   {"min_s": 0.10, "max_s": 0.35},
+        "minilm": {"min_s": 0.15, "max_s": 0.75},
+        "clap":   {"min_s": 0.10, "max_s": 0.30},
+    }
+
     def __init__(self, index_service: IndexService, face_service: FaceService):
         self.index_service = index_service
         self.face_service = face_service
@@ -28,6 +46,15 @@ class SearchService:
         self.text_collection = index_service.text_collection
         self.audio_collection = index_service.audio_collection
         self.bm25_service = index_service.bm25_service
+
+        self._modalities: List[tuple[Callable, Any, str]] = [
+            (model_manager.clip.get_text_embeddings, self.image_collection, "clip"),
+            (model_manager.text_embed.get_embeddings, self.text_collection, "minilm"),
+        ]
+        if config.audio.clap_enabled:
+            self._modalities.append(
+                (model_manager.clap.get_text_embeddings, self.audio_collection, "clap")
+            )
 
     def _process_item_id(self, item_id: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         if metadata and (
@@ -43,19 +70,22 @@ class SearchService:
                 or metadata.get("source_file") 
                 or item_id
             )
+
+            raw_type = metadata.get("type", "image")
+            item_type = "video" if raw_type == "video_frame" else raw_type
             
             result = {
                 "media_id": metadata.get("source_media_id") or metadata.get("source_file") or item_id,
                 "source": metadata.get("source", "local"),
                 "path": path_val,
                 "display_path": path_val,
-                "type": metadata.get("type", "image"),
+                "type": item_type,
                 "locator": metadata.get("locator") or metadata.get("source_file") or item_id,
                 "composite_id": item_id,
             }
             if metadata.get("timestamp") is not None:
                 result["timestamp"] = float(metadata["timestamp"])
-            elif metadata.get("type") == "video_frame":
+            elif raw_type == "video_frame":
                 result["timestamp"] = 0.0
             return result
 
@@ -117,17 +147,65 @@ class SearchService:
         raise ValueError(f"Unsupported query media source: {media.source}")
 
     @staticmethod
-    def _cosine_to_similarity(raw_distance: float) -> float:
-        """Convert raw cosine distance to a 0-1 similarity score."""
-        s = 1.0 - raw_distance
-        return max(0.0, min(1.0, s))
-    
-    def _query_collection(self, embedding_fn, collection, query, query_k):
+    def _normalize_distance(d: float, modality: str) -> float:
+        """Convert a raw cosine distance into a calibrated ``[0, 1]`` similarity score.
+
+        Raw cosine distances from ChromaDB are modality-dependent:
+        CLIP distances cluster around ``[0.10, 0.35]`` while MiniLM
+        distances span ``[0.20, 0.75]``. This method maps each modality's
+        *typical relevant range* to the unit interval so scores are
+        comparable when merging results from different collections.
+
+        The mapping is::
+
+            s = 1.0 - d
+            score = clamp((s - min_s) / (max_s - min_s), 0, 1)
+
+        Args:
+            d: Raw cosine distance from ChromaDB (0 = identical).
+            modality: One of ``"clip"``, ``"minilm"``, ``"clap"``.
+
+        Returns:
+            Normalised similarity in ``[0, 1]`` (1 = perfect match).
         """
-        Helper to query a ChromaDB collection with the appropriate embedding function.
+        s = 1.0 - d
+        r = SearchService.MODALITY_RANGES.get(modality, {"min_s": 0.0, "max_s": 1.0})
+        if s <= r["min_s"]:
+            return 0.0
+        if s >= r["max_s"]:
+            return 1.0
+        return (s - r["min_s"]) / (r["max_s"] - r["min_s"])
+
+    @staticmethod
+    def _is_lyrics_query(query: str) -> bool:
+        """Heuristic: queries with 3+ words are treated as lyric-like.
+
+        When a multi-word query is detected, transcript matches receive
+        a small boost in :meth:`semantic_text_search` because lyric
+        phrases are more likely to appear in Whisper transcriptions than
+        in CLAP ambient embeddings.
+
+        Args:
+            query: The raw user query string.
+
+        Returns:
+            ``True`` if the query has at least three whitespace-separated tokens.
+        """
+        return len(query.strip().split()) >= 3
+
+    def _query_collection(self, embedding_fn: Callable, collection, query: str, query_k: int) -> dict:
+        """Encode *query* and run a vector search against *collection*.
+
+        Args:
+            embedding_fn: Callable that maps a string to a list of floats.
+            collection: ChromaDB collection to search.
+            query: Raw text query.
+            query_k: Number of nearest neighbours to request.
+
+        Returns:
+            ChromaDB result dict with keys ``ids``, ``distances``, ``metadatas``.
         """
         embedding = embedding_fn(query)
-
         return collection.query(
             query_embeddings=[embedding],
             n_results=query_k,
@@ -135,87 +213,83 @@ class SearchService:
         )
     
     def semantic_text_search(self, query: str, top_k: int = 5, threshold: float = 0.0, media_type: str = "image") -> List[Dict[str, Any]]:
-        """
-        Performs semantic search across both images and transcribed audio/OCR texts
+        """Unified natural-language search across all indexed modalities.
+
+        Queries the image collection (CLIP), text collection (MiniLM),
+        and — when enabled — the ambient audio collection (CLAP). Results
+        from each collection are normalised with :meth:`_normalize_distance`,
+        merged, sorted by descending similarity, deduplicated, and filtered.
+
+        Args:
+            query: Free-text search query.
+            top_k: Maximum number of results to return.
+            threshold: Minimum similarity score (inclusive) for a result to be kept.
+            media_type: ``"image"``, ``"video"``, ``"audio"``, or ``"all"``.
+
+        Returns:
+            List of result dicts, each containing ``media_id``, ``path``,
+            ``type``, ``timestamp`` (if applicable), and ``similarity``.
         """
         logger.info(f"Unified Semantic Search: {query} (top_k={top_k}, type={media_type})")
         query_k = top_k * 10
-        
-        # 1. Image Collection (CLIP)
-        visual_results = self._query_collection(
-            model_manager.clip.get_text_embeddings,
-            self.image_collection,
-            query,
-            query_k
-        )
-        
-        # 2. Text Collection (MiniLM)
-        text_results = self._query_collection(
-            model_manager.text_embed.get_embeddings,
-            self.text_collection,
-            query,
-            query_k
-        )
-        
-        # 3. Ambient Audio Collection (CLAP)
-        if config.audio.clap_enabled:
-            ambient_results = self._query_collection(
-                model_manager.clap.get_text_embeddings,
-                self.audio_collection,
-                query,
-                query_k
-            )
-        else:
-            ambient_results = {"ids": [[]], "distances": [[]], "metadatas": [[]]}
-        
-        # Zip and Merge
+        is_lyrics = self._is_lyrics_query(query)
+
         combined_items = []
-        if visual_results["ids"] and visual_results["ids"][0]:
-            for p, d, m in zip(visual_results["ids"][0], visual_results["distances"][0], visual_results["metadatas"][0]):
-                combined_items.append((p, self._cosine_to_similarity(d), m))
-                
-        if text_results["ids"] and text_results["ids"][0]:
-            for p, d, m in zip(text_results["ids"][0], text_results["distances"][0], text_results["metadatas"][0]):
-                combined_items.append((p, self._cosine_to_similarity(d), m))
-                
-        if ambient_results["ids"] and ambient_results["ids"][0]:
-            for p, d, m in zip(ambient_results["ids"][0], ambient_results["distances"][0], ambient_results["metadatas"][0]):
-                combined_items.append((p, self._cosine_to_similarity(d), m))
-                
-        # Sort combined by similarity descending
+        for embedding_fn, collection, modality in self._modalities:
+            results = self._query_collection(embedding_fn, collection, query, query_k)
+            if not results["ids"] or not results["ids"][0]:
+                continue
+            for p, d, m in zip(results["ids"][0], results["distances"][0], results["metadatas"][0]):
+                s = self._normalize_distance(d, modality)
+                if is_lyrics and modality == "minilm":
+                    subtype = (m or {}).get("subtype", "")
+                    if subtype == "transcript":
+                        s = min(1.0, s * 1.25)
+                combined_items.append((p, s, m))
+
         combined_items.sort(key=lambda x: x[1], reverse=True)
-        
-        # Re-pack into ChromaDB native format for the filter function
+
         merged_results = {
             "ids": [[item[0] for item in combined_items]],
             "distances": [[item[1] for item in combined_items]],
             "metadatas": [[item[2] for item in combined_items]]
         }
-        
+
         if not merged_results["ids"] or not merged_results["ids"][0]:
             return []
-            
+
         return self._filter_results(merged_results, top_k, threshold, media_type)
 
     def semantic_image_search(self, image_path: str, top_k: int = 5, threshold: float = 0.0, media_type: str = "all") -> List[Dict[str, Any]]:
-        """CLIP Image similarity search."""
+        """Find visually similar images using CLIP embedding.
+
+        Accepts a local path, Google Drive reference, or remote URL as
+        the query image. The query image itself is excluded from results.
+
+        Args:
+            image_path: Local path, media ID, or URL of the query image.
+            top_k: Maximum number of results to return.
+            threshold: Minimum similarity score (inclusive).
+            media_type: ``"image"``, ``"video"``, ``"audio"``, or ``"all"``.
+
+        Returns:
+            List of result dicts ordered by descending similarity.
+        """
         query_media, query_input = self._resolve_query_media(image_path)
         embedding = model_manager.clip.get_image_embeddings([query_input])[0]
-        
+
         query_k = top_k * 10
         results = self.image_collection.query(
             query_embeddings=[embedding],
             n_results=query_k,
             include=["distances", "metadatas"],
         )
-        
-        # Exclude self if top result is remarkably similar
+
         exclude_path = query_media.media_id if query_media is not None else None
-        results["distances"][0] = [self._cosine_to_similarity(d) for d in results["distances"][0]]
+        results["distances"][0] = [self._normalize_distance(d, "clip") for d in results["distances"][0]]
         return self._filter_results(results, top_k, threshold, media_type, exclude_path=exclude_path)
 
     def keyword_search(self, query: str, top_k: int = 5, threshold: float = 0.0, media_type: str = "all") -> List[Dict[str, Any]]:
-        """BM25 search."""
         ids = self.bm25_service.search(query, top_k, threshold, media_type)
         if not ids:
             return []
@@ -231,7 +305,26 @@ class SearchService:
         return [self._process_item_id(item_id, metadata_lookup.get(item_id)) for item_id in ids]
 
     def _filter_results(self, results: Dict[str, Any], top_k: int, threshold: float, media_type: str, exclude_path: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Filtering and deduplication (limit frames per video)."""
+        """Apply threshold, type filter, and deduplication to raw ChromaDB results.
+
+        Deduplication logic:
+
+        * **Video items** — at most *MAX_FRAMES_PER_VIDEO* (1) result per
+          ``base_video_path`` (the media ID before any ``:::`` postfix).
+          This collapses frames, transcripts, and ambient entries from
+          the same file into a single result.
+        * **Image / audio items** — each ``media_id`` appears at most once.
+
+        Args:
+            results: ChromaDB result dict with ``ids``, ``distances``, ``metadatas``.
+            top_k: Maximum number of results to return.
+            threshold: Minimum similarity (inclusive) to keep a result.
+            media_type: ``"image"``, ``"video"``, ``"audio"``, or ``"all"``.
+            exclude_path: Optional media ID to exclude (used in image search).
+
+        Returns:
+            Filtered, deduplicated result list.
+        """
         ids = results["ids"][0]
         similarities = results["distances"][0]
         metadatas = results.get("metadatas", [[]])[0]
@@ -275,7 +368,6 @@ class SearchService:
         return final_results
 
     def generate_graph_data(self) -> Dict[str, Any]:
-        """Calculates pairwise cosine similarity and creates node-link graph data."""
         t0 = time.time()
         data = self.image_collection.get(include=["embeddings", "metadatas"])
         ids = data["ids"]
@@ -294,7 +386,6 @@ class SearchService:
                 "fileName": os.path.basename(item["path"])
             })
             
-        # Use PyTorch for efficiency
         embs_tensor = torch.tensor(embeddings)
         sim_matrix = F.cosine_similarity(embs_tensor.unsqueeze(1), embs_tensor.unsqueeze(0), dim=2)
         
@@ -326,14 +417,9 @@ class SearchService:
         return {"nodes": nodes, "links": links}
 
     def integrated_face_search(self, query: str, top_k: int = 10, threshold: float = 0.3, media_type: str = "image") -> List[Dict[str, Any]]:
-        """
-        Combines face recognition by name and semantic context search.
-        Query format example: "Find Karunya playing cricket"
-        """
         import re
         query_lower = query.lower().strip()
         
-        # Simple regex for "Find [name] [activity]"
         name, activity = None, None
         match = re.search(r'find\s+(\w+)\s+(.+)', query_lower)
         if match:
@@ -343,9 +429,8 @@ class SearchService:
             if match:
                 name = match.group(1)
             else:
-                name = query_lower # Fallback
+                name = query_lower
                 
-        # 1. Face Search
         face_paths = self.face_service.search_by_name(name)
         if not face_paths:
             return []
@@ -353,10 +438,8 @@ class SearchService:
         if not activity:
             return [self._process_item_id(p) for p in face_paths[:top_k]]
             
-        # 2. Semantic Search Filter
         semantic_results = self.semantic_text_search(activity, top_k=top_k * 5, threshold=threshold, media_type=media_type)
         semantic_paths = {r["path"] for r in semantic_results}
         
-        # 3. Intersection
         final_ids = [p for p in face_paths if p in semantic_paths]
         return [self._process_item_id(p) for p in final_ids[:top_k]]
