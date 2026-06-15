@@ -84,6 +84,7 @@
                         <option value="all">All Media</option>
                         <option value="image">Images Only</option>
                         <option value="video">Videos Only</option>
+                        <option value="audio">Audio Only</option>
                     </select>
                 </div>
                 <div class="search-option">
@@ -297,9 +298,32 @@
                             resultElement.appendChild(badge);
 
                             resultElement.onclick = () => {
-                                displayEnlargedVideo(video.src);
+                                displayEnlargedVideo(video); // Pass the element for syncing
                                 highlightSelectedImage(resultElement);
                                 showImagePath(item.display_path || item.path, item.media_id || item.path);
+                            };
+                        } else if (item.type === 'audio') {
+                            resultElement = document.createElement('figure');
+                            resultElement.className = 'audio-container';
+                            resultElement.dataset.originalPath = item.display_path || item.path;
+
+                            const audio = document.createElement('audio');
+                            audio.src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(item.media_id || item.path)}`;
+                            audio.controls = true;
+                            audio.preload = "metadata";
+
+                            const badge = document.createElement('figcaption');
+                            badge.className = 'audio-badge';
+                            badge.textContent = `Audio Match`;
+
+                            resultElement.appendChild(audio);
+                            resultElement.appendChild(badge);
+
+                            resultElement.onclick = (e) => {
+                                if (e.target !== audio) {
+                                    highlightSelectedImage(resultElement);
+                                    showImagePath(item.display_path || item.path, item.media_id || item.path);
+                                }
                             };
                         } else {
                             resultElement = document.createElement('figure');
@@ -346,22 +370,53 @@
             enlargedImgContainer.showModal();
         }
 
-        function displayEnlargedVideo(src) {
+        function displayEnlargedVideo(thumbVideo) {
             const enlargedImgContainer = document.getElementById('enlarged-img-container');
             enlargedImgContainer.innerHTML = '';
+
+            // Mute background video during sync to prevent audio doubling
+            const wasThumbPaused = thumbVideo.paused;
+            thumbVideo.muted = true;
+
+            const video = document.createElement('video');
+            video.src = thumbVideo.src;
+            video.currentTime = thumbVideo.currentTime; // Sync start time
+            video.controls = true;
+            video.autoplay = true;
+
+            // Define central cleanup and restoration logic
+            enlargedImgContainer.onclose = () => {
+                // Final sync back to thumbnail
+                thumbVideo.currentTime = video.currentTime;
+                thumbVideo.muted = false;
+                if (video.paused) thumbVideo.pause();
+                else thumbVideo.play();
+
+                enlargedImgContainer.innerHTML = ''; // Kill media elements
+                enlargedImgContainer.onclose = null; // Clean up listener
+            };
 
             const closeBtn = document.createElement('button');
             closeBtn.className = 'dialog-close-btn';
             closeBtn.innerHTML = '<i class="fas fa-times"></i>';
             closeBtn.onclick = () => enlargedImgContainer.close();
 
-            const video = document.createElement('video');
-            video.src = src;
-            video.controls = true;
-            video.autoplay = true;
+            // Bidirectional Sync Listeners
+            video.onplay = () => thumbVideo.play();
+            video.onpause = () => thumbVideo.pause();
+            video.onseeking = () => thumbVideo.currentTime = video.currentTime;
+            video.onseeked = () => thumbVideo.currentTime = video.currentTime;
 
             enlargedImgContainer.appendChild(closeBtn);
             enlargedImgContainer.appendChild(video);
+
+            // Close on backdrop click
+            enlargedImgContainer.onclick = (e) => {
+                if (e.target === enlargedImgContainer) {
+                    enlargedImgContainer.close();
+                }
+            };
+
             enlargedImgContainer.showModal();
         }
 

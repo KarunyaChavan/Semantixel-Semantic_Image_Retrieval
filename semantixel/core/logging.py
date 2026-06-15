@@ -1,6 +1,7 @@
 import logging
 import sys
 import os
+import traceback
 
 def setup_logging(level=logging.INFO):
     """
@@ -27,6 +28,20 @@ def setup_logging(level=logging.INFO):
         logger.addHandler(file_handler)
 
     return logger
+
+def log_exception(logger_instance, message: str, level=logging.ERROR):
+    """Log an exception with full traceback at the given log level.
+
+    Captures the current exception context via traceback.format_exc
+    and appends it to the log message. Use inside an except block.
+
+    Args:
+        logger_instance: A :class:`logging.Logger` instance.
+        message: Human-readable description of the error context.
+        level: Logging level (default ``logging.ERROR``).
+    """
+    tb = traceback.format_exc()
+    logger_instance.log(level, f"{message}\n{tb}")
 
 # Primary logger for the application
 logger = setup_logging()

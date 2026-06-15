@@ -1,4 +1,5 @@
 import os
+import librosa
 import chromadb
 from tqdm import tqdm
 from typing import List
@@ -25,8 +26,12 @@ class IndexService:
         self.text_collection = self.client.get_or_create_collection(
             "texts", metadata={"hnsw:space": "cosine"}
         )
+        self.audio_collection = self.client.get_or_create_collection(
+            "ambient_audio", metadata={"hnsw:space": "cosine"}
+        )
         self.bm25_service = BM25Service(index_path=os.path.join(db_path, "bm25_index.pkl"))
         self.video_extensions = {".mp4", ".mkv", ".avi", ".mov"}
+        self.audio_extensions = {".mp3", ".wav", ".flac", ".m4a", ".aac"}
         self.google_drive_source = GoogleDriveSource()
 
     def run_full_scan(self):
@@ -68,8 +73,12 @@ class IndexService:
         """
         batch_size = config.batch_size
         deep_scan = config.deep_scan
+
+        audio_items = [m for m in media_items if m.locator.lower().endswith(tuple(self.audio_extensions | self.video_extensions))]
+        visual_items = [m for m in media_items if not m.locator.lower().endswith(tuple(self.audio_extensions))]
         
-        with tqdm(total=len(media_items), desc="Indexing media") as pbar:
+        total_tasks = len(visual_items) + len(audio_items)
+        with tqdm(total=total_tasks, desc="Indexing media") as pbar:
             processing_inputs = []
             processing_ids = []
             processing_metadatas = []
@@ -101,19 +110,18 @@ class IndexService:
                         self.text_collection.upsert(
                             ids=[current_id],
                             embeddings=[text_embedding],
-                            metadatas=[metadata]
+                            metadatas=[metadata],
+                            documents=[text]
                         )
-                        
-                        # Keyword Search
-                        self.bm25_service.add_document(current_id, text)
                 
                 processing_inputs.clear()
                 processing_ids.clear()
                 processing_metadatas.clear()
 
-            for media in media_items:
+            # PHASE 1: Process Visuals
+            for media in visual_items:
                 path = media.locator
-                is_video = media.source == "local" and path.lower().endswith(tuple(self.video_extensions))
+                is_video = path.lower().endswith(tuple(self.video_extensions))
                 needs_indexing = False
                 
                 # Check if already indexed
@@ -163,29 +171,120 @@ class IndexService:
                 
                 pbar.update(1)
             
-            flush_batch() # Last one
-            self.bm25_service.rebuild()
+            # Flush any remaining visuals before moving to audio
+            flush_batch() 
+            
+            # PHASE 2: Process Audio Constraints Sequentially
+            audio_config = config.audio
+            if audio_config.enabled:
+                for media in audio_items:
+                    is_video = media.locator.lower().endswith(tuple(self.video_extensions))
+                    derived_type = "video" if is_video else "audio"
+                    # Duration gate — skip files that exceed the configured limit
+                    if audio_config.max_duration_seconds > 0:
+                        try:
+                            duration = librosa.get_duration(path=media.locator)
+                            if duration > audio_config.max_duration_seconds:
+                                logger.debug(f"Skipping {media.display_path} ({duration:.1f}s > {audio_config.max_duration_seconds}s)")
+                                pbar.update(1)
+                                continue
+                        except Exception as exc:
+                            logger.warning(f"Could not determine duration for {media.display_path}: {exc}")
+
+                    # 1. Transcript indexing
+                    if audio_config.transcription_enabled:
+                        transcript_id = f"{media.media_id}:::audio"
+                        try:
+                            transcript_results = self.text_collection.get(ids=[transcript_id])
+                        except Exception:
+                            transcript_results = {"ids": []}
+
+                        if not transcript_results["ids"]:
+                            try:
+                                transcript = model_manager.audio.transcribe(media.locator, audio_config.transcription_max_duration)
+                            except Exception as exc:
+                                logger.warning(f"Transcription failed for {media.display_path}: {exc}")
+                                transcript = None
+
+                            if transcript and transcript.strip():
+                                try:
+                                    text_embedding = model_manager.text_embed.get_embeddings(transcript)
+                                    self.text_collection.upsert(
+                                        ids=[transcript_id],
+                                        embeddings=[text_embedding],
+                                        metadatas=[{
+                                            "source": media.source,
+                                            "source_media_id": media.media_id,
+                                            "locator": media.locator,
+                                            "display_path": media.display_path,
+                                            "type": derived_type,
+                                            "subtype": "transcript"
+                                        }],
+                                        documents=[transcript]
+                                    )
+                                except Exception as exc:
+                                    logger.warning(f"Transcript embedding/indexing failed for {media.display_path}: {exc}")
+                
+                    # 2. Ambient sound indexing
+                    if audio_config.clap_enabled:
+                        ambient_id = f"{media.media_id}:::ambient"
+                        try:
+                            ambient_results = self.audio_collection.get(ids=[ambient_id])
+                        except Exception:
+                            ambient_results = {"ids": []}
+
+                        if not ambient_results["ids"]:
+                            try:
+                                ambient_embedding = model_manager.clap.get_audio_embeddings(media.locator)
+                            except Exception as exc:
+                                logger.warning(f"CLAP embedding failed for {media.display_path}: {exc}")
+                                ambient_embedding = None
+
+                            if ambient_embedding and any(v != 0 for v in ambient_embedding):
+                                try:
+                                    self.audio_collection.upsert(
+                                        ids=[ambient_id],
+                                        embeddings=[ambient_embedding],
+                                        metadatas=[{
+                                            "source": media.source,
+                                            "source_media_id": media.media_id,
+                                            "locator": media.locator,
+                                            "display_path": media.display_path,
+                                            "type": derived_type,
+                                            "subtype": "ambient"
+                                        }]
+                                    )
+                                except Exception as exc:
+                                    logger.warning(f"CLAP index upsert failed for {media.display_path}: {exc}")
+                
+                    pbar.update(1)
+            else:
+                for _ in audio_items:
+                    pbar.update(1)
+                
+            self.bm25_service.rebuild_from_collection(self.text_collection)
 
     def cleanup_index(self, valid_media_items: List[MediaDescriptor]):
         """
         Removes stale entries from the index.
         """
         logger.info("Cleaning up index...")
-        collection_data = self.image_collection.get(include=["metadatas"])
-        all_ids = collection_data["ids"]
-        all_metadatas = collection_data.get("metadatas") or []
-        valid_media_ids = {media.media_id for media in valid_media_items}
-        
-        ids_to_delete = []
-        for doc_id, metadata in zip(all_ids, all_metadatas):
-            source_media_id = metadata.get("source_media_id") if metadata else doc_id
-            if source_media_id not in valid_media_ids:
-                ids_to_delete.append(doc_id)
-        
-        if ids_to_delete:
-            logger.info(f"Removing {len(ids_to_delete)} stale entries")
-            self.image_collection.delete(ids=ids_to_delete)
-            # Find matching text IDs (they use same doc_id)
-            self.text_collection.delete(ids=ids_to_delete)
-            # BM25 is harder to clean individually, but rebuild() handles it if we don't call add_document for them
+        valid_media_ids = {m.media_id for m in valid_media_items}
+
+        for collection in [self.image_collection, self.text_collection, self.audio_collection]:
+            try:
+                collection_data = collection.get()
+                all_ids = collection_data["ids"]
+                all_metadatas = collection_data.get("metadatas") or [None] * len(all_ids)
+                
+                ids_to_delete = []
+                for doc_id, metadata in zip(all_ids, all_metadatas):
+                    source_media_id = metadata.get("source_media_id") if metadata else doc_id
+                    if source_media_id not in valid_media_ids:
+                        ids_to_delete.append(doc_id)
+                
+                if ids_to_delete:
+                    collection.delete(ids=ids_to_delete)
+            except Exception as e:
+                logger.error(f"Error cleaning up collection: {e}")
             # For now, we'll just leave them in BM25 until next rebuild or implement delete in BM25Service

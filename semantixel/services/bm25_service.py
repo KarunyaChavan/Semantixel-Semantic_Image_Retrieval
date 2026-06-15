@@ -34,10 +34,13 @@ class BM25Service:
             logger.info("Initializing new BM25 index")
             self._reset()
     
-    def _reset(self):
+    def reset(self):
         self.bm25 = None
         self.documents = []
         self.doc_ids = []
+
+    def _reset(self):
+        self.reset()
     
     def add_document(self, doc_id: str, text: str):
         """Add or update a document in the index"""
@@ -66,7 +69,48 @@ class BM25Service:
         
         if save:
             self.save()
+
+    def _infer_media_type(self, doc_id: str) -> str:
+            """
+            Infer media type from document ID.
+            """
+            if ":::" not in doc_id:
+                return "image"
+
+            postfix = doc_id.split(":::")[-1]
+
+            if postfix in {"audio", "video"}:
+                return postfix
+
+            try:
+                float(postfix)
+                return "video"
+            except ValueError:
+                return "unknown"
     
+    def rebuild_from_collection(self, collection, save: bool = True):
+        """Rebuild the BM25 index from a ChromaDB collection's stored documents.
+
+        Reads ``ids`` and ``documents`` from the collection, replaces the
+        in-memory document store, and calls :meth:`rebuild`. This ensures
+        the keyword index always mirrors the current text collection,
+        automatically evicting stale entries from renamed or deleted files.
+
+        Args:
+            collection: A ChromaDB collection with ``documents`` stored.
+            save: Whether to persist the rebuilt index to disk.
+        """
+        data = collection.get(include=["documents"])
+        ids = data.get("ids", [])
+        docs = data.get("documents", [])
+        self.documents = []
+        self.doc_ids = []
+        for doc_id, doc_text in zip(ids, docs):
+            if doc_text:
+                self.documents.append(doc_text)
+                self.doc_ids.append(doc_id)
+        self.rebuild(save=save)
+
     def search(self, query: str, top_k: int = 5, threshold: float = 0.0, media_type: str = "all") -> List[str]:
         """
         Search for documents matching the query.
@@ -82,11 +126,9 @@ class BM25Service:
             # Relax threshold for BM25 scores (not 0-1)
             if score > 0:
                 doc_id = self.doc_ids[i]
-                is_video = ":::" in doc_id
+                item_type = self._infer_media_type(doc_id)
                 
-                if media_type == "image" and is_video:
-                    continue
-                if media_type == "video" and not is_video:
+                if media_type != "all" and media_type != item_type:
                     continue
                     
                 results.append((doc_id, score))

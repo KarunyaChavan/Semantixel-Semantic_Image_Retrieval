@@ -6,11 +6,29 @@ from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class CLIPConfig(BaseModel):
+    """
+    Configuration for CLIP-based embedding models.
+
+    Attributes:
+        HF_transformers_clip: Hugging Face CLIP model checkpoint.
+        mobileclip_checkpoint: MobileCLIP model identifier.
+        provider: Embedding provider backend.
+    """
     HF_transformers_clip: str = "openai/clip-vit-base-patch32"
     mobileclip_checkpoint: str = "mobileclip_s0"
     provider: str = "HF_transformers"
 
 class TextEmbedConfig(BaseModel):
+    """
+    Configuration for text embedding models.
+
+    Attributes:
+        HF_transformers_embeddings: Hugging Face text embedding model checkpoint.
+        embedding_gguf: GGUF format embedding model path.
+        ollama_embeddings: Ollama text embedding model name.
+        openai_api_key: API key for OpenAI services.
+        openai_endpoint: Endpoint for OpenAI services.
+    """
     HF_transformers_embeddings: str = "sentence-transformers/all-MiniLM-L6-v2"
     embedding_gguf: str = ""
     ollama_embeddings: str = ""
@@ -19,7 +37,39 @@ class TextEmbedConfig(BaseModel):
     openai_model: str = ""
     provider: str = "HF_transformers"
 
+class AudioConfig(BaseModel):
+    """
+    Configuration for audio transcription and CLAP embedding models.
+
+    Attributes:
+        enabled: Master switch to enable/disable all audio processing.
+        transcription_enabled: Enable/disable transcription indexing.
+        clap_enabled: Enable/disable CLAP ambient audio embedding.
+        max_duration_seconds: Skip audio/video files longer than this (0 = no limit).
+        HF_transformers_whisper: Hugging Face Whisper model checkpoint.
+        faster_whisper_model: Faster Whisper model identifier.
+        provider: Transcription provider backend.
+    """
+    enabled: bool = True
+    transcription_enabled: bool = True
+    clap_enabled: bool = True
+    max_duration_seconds: float = 0
+    HF_transformers_whisper: str = "openai/whisper-tiny"
+    faster_whisper_model: str = "tiny.en"
+    provider: str = "faster_whisper"
+    transcription_max_duration: float = 60.0
+    
 class GoogleDriveConfig(BaseModel):
+    """
+    Configuration for Google Drive integration.
+
+    Attributes:
+        enabled: Whether Google Drive integration is enabled.
+        client_secret_file: Path to the client secret file.
+        token_file: Path to the token file.
+        redirect_uri: The redirect URI for the Google Drive API.
+        folder_ids: A list of folder IDs to scan.
+    """
     enabled: bool = False
     client_secret_file: str = ""
     token_file: str = "google_drive_token.json"
@@ -37,6 +87,10 @@ class GoogleDriveConfig(BaseModel):
     ])
 
 class SemantixelConfig(BaseSettings):
+    """
+    Main configuration class for Semantixel, encompassing all settings for model providers, search parameters, and integrations.
+    """
+    audio: AudioConfig = Field(default_factory=AudioConfig)
     batch_size: int = 16
     clip: CLIPConfig = Field(default_factory=CLIPConfig)
     deep_scan: bool = True

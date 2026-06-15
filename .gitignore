@@ -37,3 +37,13 @@ config.yaml
 google_drive_token.json
 client_secret_*.json
 *google*token*.json
+
+#Knowledge Base
+graphify-out/
+.agent/
+
+#Logs
+*.log
+
+#Generated gRPC stubs (regenerate via python scripts/generate_proto.py)
+semantixel/*_pb2*.py
