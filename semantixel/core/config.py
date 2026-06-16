@@ -105,7 +105,8 @@ class SemantixelConfig(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="SEMANTIXEL_",
         env_nested_delimiter="__",
-        case_sensitive=False
+        case_sensitive=False,
+        extra="ignore",
     )
 
 def load_config(config_path: str = "config.yaml", default_path: str = "config.default.yaml") -> SemantixelConfig:
@@ -123,7 +124,7 @@ def load_config(config_path: str = "config.yaml", default_path: str = "config.de
             print(f"Warning: Neither {config_path} nor {default_path} found. Using system defaults.")
             return SemantixelConfig()
 
-    with open(config_path, "r") as f:
+    with open(config_path, "r", encoding="utf-8-sig") as f:
         config_data = yaml.safe_load(f) or {}
     
     return SemantixelConfig(**config_data)

@@ -1,0 +1,112 @@
+# ============================================================================
+# Semantixel — Semantic Image Retrieval
+# ============================================================================
+# Python 3.11 is required.
+#
+# ── Quick Start ──────────────────────────────────────────────────────────────
+#   1. conda create -y -n semantixel python=3.11
+#   2. conda activate semantixel
+#   3. pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+#   4. pip install -e .
+#
+#   For CPU-only (no CUDA), replace step 3 with:
+#     pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# ============================================================================
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "semantixel"
+version = "1.0.0"
+description = "Semantic Image Retrieval with CLIP, OCR, face recognition, and audio indexing"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    {name = "Karunya Chavan"},
+]
+
+# ── Core Dependencies ────────────────────────────────────────────────────────
+# torch, torchvision, torchaudio: installed via conda (handles CUDA/cpu).
+#   DO NOT include them here — pip will conflict with the conda install.
+dependencies = [
+    # ── ML / Deep Learning ────────────────────────────────────────────────
+    "transformers>=4.38.0",
+    "timm>=1.0.9",
+    "open-clip-torch>=2.24.0",
+    "clip-benchmark>=1.6.0",
+    "safetensors>=0.4.0",
+    "einops>=0.7.0",
+
+    # ── OCR ───────────────────────────────────────────────────────────────
+    "python-doctr>=1.0.0",
+
+    # ── Face Detection / Recognition ──────────────────────────────────────
+    "deepface>=0.0.79",
+    "mtcnn-opencv>=1.0.0",
+    "tf-keras>=2.15.0",
+
+    # ── Audio ─────────────────────────────────────────────────────────────
+    "librosa>=0.10.0",
+    "soundfile>=0.12.0",
+    "audioread>=3.0.0",
+    "faster-whisper>=1.0.0",
+    "ctranslate2>=4.0.0",
+
+    # ── Vector Database ───────────────────────────────────────────────────
+    "chromadb>=0.4.22",
+
+    # ── Search / NLP ──────────────────────────────────────────────────────
+    "rank-bm25>=0.2.0",
+    "scikit-learn>=1.3.0",
+    "ftfy>=6.1.0",
+    "regex>=2023.10.0",
+
+    # ── Web Server ────────────────────────────────────────────────────────
+    "Flask>=3.0.0",
+    "flask-cors>=4.0.0",
+    "gunicorn>=21.2.0",
+
+    # ── GUI Settings ──────────────────────────────────────────────────────
+    "ttkbootstrap>=1.10.0",
+    "darkdetect>=0.8.0",
+
+    # ── Google Drive Integration ──────────────────────────────────────────
+    "google-auth>=2.27.0",
+    "google-auth-oauthlib>=1.2.0",
+    "google-api-python-client>=2.108.0",
+
+    # ── Image Processing ──────────────────────────────────────────────────
+    "opencv-python>=4.8.0",
+    "Pillow>=10.0.0",
+
+    # ── Data / Config ─────────────────────────────────────────────────────
+    "PyYAML>=6.0",
+    "pydantic-settings>=2.1.0",
+    "python-dotenv>=1.0.0",
+    "datasets>=2.14.0",
+
+    # ── Utilities ─────────────────────────────────────────────────────────
+    "tqdm>=4.66.0",
+    "requests>=2.31.0",
+    "numpy>=1.24.0",
+    "scipy>=1.11.0",
+]
+
+# ── Optional Dependency Groups ──────────────────────────────────────────────
+
+[project.optional-dependencies]
+# Flow Launcher plugin (Windows launcher integration)
+flowlauncher = ["flowlauncher>=0.1.0"]
+
+# ── Entry Points ────────────────────────────────────────────────────────────
+
+[project.scripts]
+semantixel = "main:main"
+
+# ── Tool Configuration ──────────────────────────────────────────────────────
+
+[tool.setuptools.packages.find]
+include = ["semantixel*", "settings*"]

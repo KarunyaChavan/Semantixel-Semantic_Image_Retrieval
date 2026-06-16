@@ -35,11 +35,11 @@ class HFCLIPProvider(CLIPProvider):
         # Configure for offline usage if preferred, but allow auto-download if missing
         try:
             self.model = CLIPModel.from_pretrained(self.checkpoint, local_files_only=True)
-            self.processor = CLIPProcessor.from_pretrained(self.checkpoint, local_files_only=True, use_fast=True)
+            self.processor = CLIPProcessor.from_pretrained(self.checkpoint, local_files_only=True)
         except (OSError, ValueError):
             logger.info(f"Model {self.checkpoint} not found locally. Downloading...")
             self.model = CLIPModel.from_pretrained(self.checkpoint)
-            self.processor = CLIPProcessor.from_pretrained(self.checkpoint, use_fast=True)
+            self.processor = CLIPProcessor.from_pretrained(self.checkpoint)
             
         self.model.to(self.device)
         self.model.eval() # Ensure eval mode
@@ -61,6 +61,13 @@ class HFCLIPProvider(CLIPProvider):
             return image_input
         return Image.open(image_input).convert("RGB")
 
+    def _unwrap_output(self, output):
+        if hasattr(output, "pooler_output"):
+            return output.pooler_output
+        if isinstance(output, torch.Tensor):
+            return output
+        return output[0]
+
     def get_image_embeddings(self, images: List[Union[str, Image.Image]]) -> List[List[float]]:
         if not images:
             return []
@@ -72,7 +79,8 @@ class HFCLIPProvider(CLIPProvider):
             
         inputs = self.processor(images=pil_images, return_tensors="pt").to(self.device)
         with torch.no_grad():
-            image_features = self.model.get_image_features(**inputs)
+            outputs = self.model.get_image_features(**inputs)
+            image_features = self._unwrap_output(outputs)
             
         # Normalize to unit length (L2 normalization)
         image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
@@ -83,7 +91,8 @@ class HFCLIPProvider(CLIPProvider):
         self.load()
         with torch.no_grad():
             inputs = self.processor(text=[text], return_tensors="pt").to(self.device)
-            text_features = self.model.get_text_features(**inputs)
+            outputs = self.model.get_text_features(**inputs)
+            text_features = self._unwrap_output(outputs)
             # Normalize to unit length
             text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
         return text_features.cpu()[0].tolist()

@@ -26,19 +26,18 @@ class HFAudioProvider(AudioProvider):
             
         logger.info(f"Loading HF Audio model (Whisper): {self.checkpoint} on {self.device_mapped}")
         try:
-            # Try to load from cache/local files first
             self.pipe = pipeline(
-                "automatic-speech-recognition", 
-                model=self.checkpoint, 
+                "automatic-speech-recognition",
+                model=self.checkpoint,
                 device=self.device_mapped,
-                model_kwargs={"local_files_only": True}
+                local_files_only=True,
             )
         except Exception as e:
-            logger.info(f"Audio model {self.checkpoint} not found locally or failed. Downloading... ({e})")
+            logger.info(f"Audio model {self.checkpoint} not found locally. Downloading...")
             self.pipe = pipeline(
-                "automatic-speech-recognition", 
-                model=self.checkpoint, 
-                device=self.device_mapped
+                "automatic-speech-recognition",
+                model=self.checkpoint,
+                device=self.device_mapped,
             )
 
     def unload(self):

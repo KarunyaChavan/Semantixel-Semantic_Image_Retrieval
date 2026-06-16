@@ -32,6 +32,13 @@ class HFAudioCLAPProvider(BaseModelProvider):
             logger.error(f"Failed to load CLAP model {self.checkpoint}: {e}")
             raise e
 
+    def _unwrap_output(self, output):
+        if hasattr(output, "pooler_output"):
+            return output.pooler_output
+        if isinstance(output, torch.Tensor):
+            return output
+        return output[0]
+
     def get_audio_embeddings(self, audio_path: str) -> list:
         if not self.is_loaded:
             self.load()
@@ -41,11 +48,12 @@ class HFAudioCLAPProvider(BaseModelProvider):
                 logger.debug(f"No audio stream found in {audio_path}, skipping CLAP embedding")
                 return [0.0] * 512
             y, sr = librosa.load(audio_path, sr=48000, duration=10.0)
-            inputs = self.processor(audios=y, sampling_rate=48000, return_tensors="pt").to(self.device)
+            inputs = self.processor(audio=y, sampling_rate=48000, return_tensors="pt").to(self.device)
             with torch.no_grad():
                 outputs = self.model.get_audio_features(**inputs)
+                embedding = self._unwrap_output(outputs)
             
-            embedding = outputs / outputs.norm(dim=-1, keepdim=True)
+            embedding = embedding / embedding.norm(dim=-1, keepdim=True)
             return embedding[0].cpu().numpy().tolist()
             
         except Exception:
@@ -60,8 +68,9 @@ class HFAudioCLAPProvider(BaseModelProvider):
             inputs = self.processor(text=text, return_tensors="pt").to(self.device)
             with torch.no_grad():
                 outputs = self.model.get_text_features(**inputs)
+                embedding = self._unwrap_output(outputs)
                 
-            embedding = outputs / outputs.norm(dim=-1, keepdim=True)
+            embedding = embedding / embedding.norm(dim=-1, keepdim=True)
             return embedding[0].cpu().numpy().tolist()
         except Exception as e:
             logger.error(f"Error getting CLAP text embedding for '{text}': {e}")
