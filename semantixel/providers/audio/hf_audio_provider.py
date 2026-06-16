@@ -1,30 +1,41 @@
+"""Hugging Face Transformers Whisper audio transcription provider."""
+
 import torch
-from typing import Optional, Union, List
+from typing import Optional
 from transformers import pipeline
-import transformers
+import transformers as _transformers
 from semantixel.providers.base import AudioProvider
+from semantixel.providers.registry import provider
 from semantixel.core.logging import logger, log_exception
+from semantixel.core.device import detect_device, clear_gpu_cache
 
-transformers.logging.set_verbosity_error()
+_transformers.logging.set_verbosity_error()
 
+
+@provider("audio", "HF_transformers")
 class HFAudioProvider(AudioProvider):
+    """Hugging Face Transformers implementation of Whisper transcription.
+
+    Uses the ``automatic-speech-recognition`` pipeline with chunked
+    processing for long audio (30 s chunks).
     """
-    Hugging Face Transformers implementation of Audio Transcriptions (Whisper).
-    """
+
     def __init__(self, checkpoint: str = "openai/whisper-tiny"):
         self.checkpoint = checkpoint
         self.pipe = None
-        self.device_mapped = (
-            "mps"
-            if torch.backends.mps.is_available()
-            else ("cuda:0" if torch.cuda.is_available() else "cpu")
-        )
-        
+        self.device_mapped = detect_device().replace("cuda", "cuda:0")
+
     def load(self):
+        """Load the Whisper model into a Hugging Face pipeline."""
         if self.pipe is not None:
             return
-            
-        logger.info(f"Loading HF Audio model (Whisper): {self.checkpoint} on {self.device_mapped}")
+
+        logger.info(
+            "Loading HF Audio model (Whisper): %s on %s",
+            self.checkpoint,
+            self.device_mapped,
+        )
+
         try:
             self.pipe = pipeline(
                 "automatic-speech-recognition",
@@ -32,8 +43,10 @@ class HFAudioProvider(AudioProvider):
                 device=self.device_mapped,
                 local_files_only=True,
             )
-        except Exception as e:
-            logger.info(f"Audio model {self.checkpoint} not found locally. Downloading...")
+        except Exception:
+            logger.info(
+                "Audio model %s not found locally. Downloading...", self.checkpoint
+            )
             self.pipe = pipeline(
                 "automatic-speech-recognition",
                 model=self.checkpoint,
@@ -41,19 +54,27 @@ class HFAudioProvider(AudioProvider):
             )
 
     def unload(self):
+        """Unload the pipeline and free GPU memory."""
         if self.pipe is not None:
             logger.info("Unloading Audio model")
             self.pipe = None
-            if "cuda" in self.device_mapped:
-                torch.cuda.empty_cache()
+            clear_gpu_cache(self.device_mapped)
 
     def transcribe(self, file_path: str, max_duration: float = 60.0) -> Optional[str]:
-        """
-        Transcribes the provided audio file path.
+        """Transcribe an audio file to text.
+
+        Args:
+            file_path: Path to the audio file.
+            max_duration: Maximum seconds of audio to process
+                (``0`` = full file).
+
+        Returns:
+            Transcribed text, or ``None`` on failure.
         """
         self.load()
         try:
             import librosa
+
             duration = None if max_duration <= 0 else max_duration
             y, sr = librosa.load(file_path, sr=16000, duration=duration)
 
@@ -61,5 +82,5 @@ class HFAudioProvider(AudioProvider):
             result = self.pipe(audio_input, return_timestamps=True, chunk_length_s=30)
             return result.get("text", "").strip()
         except Exception:
-            log_exception(logger, f"Error transcribing {file_path}")
+            log_exception(logger, "Error transcribing %s", file_path)
             return None

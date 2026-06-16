@@ -1,30 +1,43 @@
+"""Singleton model lifecycle manager.
+
+Provides lazy initialisation and centralised access to all ML models.
+Uses the :class:`ProviderRegistry` so that adding a new provider
+implementation does **not** require modifying this file.
+"""
+
 from typing import Optional
 from semantixel.core.config import config
 from semantixel.core.logging import logger
-from semantixel.providers.clip.hf_provider import HFCLIPProvider
-from semantixel.providers.ocr.doctr_provider import DoctrOCRProvider
-from semantixel.providers.text.hf_provider import HFTextEmbeddingProvider
-from semantixel.providers.audio.hf_audio_provider import HFAudioProvider
-from semantixel.providers.audio.faster_whisper_provider import FasterWhisperProvider
-from semantixel.providers.audio.clap_provider import HFAudioCLAPProvider
+from semantixel.providers.registry import ProviderRegistry
+
 
 class ModelManager:
+    """Singleton that holds lazy references to all model providers.
+
+    Access each model via a read-only property (``.clip``, ``.ocr``,
+    etc.).  The underlying provider is loaded on first access and cached
+    for the lifetime of the process.
+
+    Attributes:
+        clip: CLIP image/text embedding provider.
+        ocr: OCR text-extraction provider.
+        text_embed: Dense text embedding provider.
+        audio: Audio transcription provider.
+        clap: CLAP audio/text embedding provider.
     """
-    Singleton manager for all AI models.
-    Provides lazy loading and centralized access to model providers.
-    """
-    _instance = None
-    
-    def __new__(cls):
+
+    _instance: Optional["ModelManager"] = None
+    _initialized: bool = False
+
+    def __new__(cls) -> "ModelManager":
         if cls._instance is None:
-            cls._instance = super(ModelManager, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
 
     def __init__(self):
         if self._initialized:
             return
-            
         self._clip_provider = None
         self._ocr_provider = None
         self._text_provider = None
@@ -32,71 +45,102 @@ class ModelManager:
         self._clap_provider = None
         self._initialized = True
 
+    # Provider resolution lookup table
+    # Map (config attribute, registry category, default name)
+    # to avoid repetitive if/elif chains.
+
+    _PROVIDER_MAP = {
+        "clip": ("clip", "clip", "HF_transformers"),
+        "ocr": ("ocr_provider", "ocr", "doctr"),
+        "text_embed": ("text_embed", "text", "HF_transformers"),
+    }
+
     @property
     def clip(self):
+        """CLIP image/text embedding provider."""
         if self._clip_provider is None:
-            provider_type = config.clip.provider
-            if provider_type == "HF_transformers":
-                self._clip_provider = HFCLIPProvider(checkpoint=config.clip.HF_transformers_clip)
-            else:
-                # Fallback or other providers like MobileCLIP
-                logger.warning(f"Unsupported CLIP provider: {provider_type}. Falling back to HF.")
-                self._clip_provider = HFCLIPProvider()
+            self._clip_provider = self._resolve("clip", config.clip.provider)
         return self._clip_provider
 
     @property
     def ocr(self):
+        """OCR text-extraction provider."""
         if self._ocr_provider is None:
-            provider_type = config.ocr_provider
-            if provider_type == "doctr":
-                self._ocr_provider = DoctrOCRProvider()
-            else:
-                logger.warning(f"Unsupported OCR provider: {provider_type}. Falling back to Doctr.")
-                self._ocr_provider = DoctrOCRProvider()
+            self._ocr_provider = self._resolve("ocr", config.ocr_provider)
         return self._ocr_provider
 
     @property
     def text_embed(self):
+        """Dense text embedding provider."""
         if self._text_provider is None:
-            provider_type = config.text_embed.provider
-            if provider_type == "HF_transformers":
-                self._text_provider = HFTextEmbeddingProvider(checkpoint=config.text_embed.HF_transformers_embeddings)
-            else:
-                logger.warning(f"Unsupported Text Embedding provider: {provider_type}. Falling back to HF.")
-                self._text_provider = HFTextEmbeddingProvider()
+            self._text_provider = self._resolve("text", config.text_embed.provider)
         return self._text_provider
 
     @property
     def audio(self):
+        """Audio transcription provider."""
         if self._audio_provider is None:
-            provider_type = config.audio.provider
-            if provider_type == "faster_whisper":
-                self._audio_provider = FasterWhisperProvider(checkpoint=config.audio.faster_whisper_model)
-            elif provider_type == "HF_transformers":
-                self._audio_provider = HFAudioProvider(checkpoint=config.audio.HF_transformers_whisper)
-            else:
-                logger.warning(f"Unsupported Audio provider: {provider_type}. Falling back to faster_whisper.")
-                self._audio_provider = FasterWhisperProvider()
+            self._audio_provider = self._resolve_audio()
         return self._audio_provider
 
     @property
     def clap(self):
+        """CLAP audio/text embedding provider."""
         if self._clap_provider is None:
-            self._clap_provider = HFAudioCLAPProvider()
+            self._clap_provider = self._resolve("clap", "HF_transformers")
         return self._clap_provider
 
-    def unload_all(self):
-        """Unload all models to free memory/VRAM."""
-        if self._clip_provider:
-            self._clip_provider.unload()
-        if self._ocr_provider:
-            self._ocr_provider.unload()
-        if self._text_provider:
-            self._text_provider.unload()
-        if self._audio_provider:
-            self._audio_provider.unload()
-        if self._clap_provider:
-            self._clap_provider.unload()
+    # Internal helpers
 
-# Global model manager instance
+    @staticmethod
+    def _resolve(category: str, name: str):
+        """Instantiate a provider via the registry.
+
+        Falls back to the default provider for the category if *name*
+        is not found.
+        """
+        try:
+            return ProviderRegistry.get(category, name)
+        except KeyError:
+            logger.warning(
+                "Provider '%s/%s' not found. Falling back to default.", category, name
+            )
+            defaults = {
+                "clip": "HF_transformers",
+                "ocr": "doctr",
+                "text": "HF_transformers",
+                "clap": "HF_transformers",
+            }
+            return ProviderRegistry.get(category, defaults.get(category, name))
+
+    def _resolve_audio(self):
+        """Resolve the audio provider, handling the dual-name config."""
+        name = config.audio.provider
+        try:
+            return ProviderRegistry.get("audio", name)
+        except KeyError:
+            logger.warning(
+                "Audio provider '%s' not found. Falling back to faster_whisper.", name
+            )
+            return ProviderRegistry.get("audio", "faster_whisper")
+
+    def unload_all(self):
+        """Unload every provider and free GPU memory."""
+        for attr in (
+            "_clip_provider",
+            "_ocr_provider",
+            "_text_provider",
+            "_audio_provider",
+            "_clap_provider",
+        ):
+            provider = getattr(self, attr, None)
+            if provider is not None:
+                try:
+                    provider.unload()
+                except Exception as exc:
+                    logger.warning("Error unloading %s: %s", attr, exc)
+                setattr(self, attr, None)
+
+
+# Global singleton
 model_manager = ModelManager()

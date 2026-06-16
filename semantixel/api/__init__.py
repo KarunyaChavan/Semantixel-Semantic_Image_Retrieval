@@ -1,3 +1,9 @@
+"""Flask application factory for the Semantixel REST API.
+
+Creates and configures the WSGI application, wires up services, and
+registers blueprint routes.
+"""
+
 from flask import Flask
 from flask_cors import CORS
 from semantixel.core.config import config
@@ -7,34 +13,37 @@ from semantixel.services.search_service import SearchService
 from semantixel.services.face_service import FaceService
 from semantixel.services.model_manager import model_manager
 
-def create_app():
-    """
-    Flask Application Factory.
-    Initializes dependencies and registers blueprints.
+
+def create_app() -> Flask:
+    """Create and return a configured Flask application instance.
+
+    Initialises all services (index, face, search) and attaches them to
+    the app context so that route handlers can access them via
+    ``current_app.<service>``.
+
+    Returns:
+        A ready-to-run :class:`Flask` application.
     """
     app = Flask(__name__, static_folder="../../UI/Semantixel WebUI")
     CORS(app)
 
-    # Initialize services
     index_service = IndexService()
     face_service = FaceService()
     search_service = SearchService(index_service, face_service)
-    
+
     app.index_service = index_service
     app.face_service = face_service
     app.search_service = search_service
     app.google_drive_source = index_service.google_drive_source
 
-    # Warm the CLIP model at server startup so the first semantic query
-    # does not pay the full model load cost.
     try:
         model_manager.clip.load()
     except Exception as exc:
-        logger.warning(f"CLIP warmup skipped: {exc}")
+        logger.warning("CLIP warmup skipped: %s", exc)
 
-    # Register Blueprints
     from semantixel.api.routes import main_bp
+
     app.register_blueprint(main_bp)
 
-    logger.info(f"Semantixel Server initialized on port {config.port}")
+    logger.info("Semantixel Server initialized on port %d", config.port)
     return app
