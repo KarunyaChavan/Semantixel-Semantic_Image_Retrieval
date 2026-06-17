@@ -8,7 +8,7 @@ implementation does **not** require modifying this file.
 from typing import Optional
 from semantixel.core.config import config
 from semantixel.core.logging import logger
-from semantixel.providers.registry import ProviderRegistry
+from semantixel.providers.registry import ProviderRegistry, ProviderRegistryError
 
 
 class ModelManager:
@@ -101,7 +101,7 @@ class ModelManager:
         """
         try:
             return ProviderRegistry.get(category, name)
-        except KeyError:
+        except ProviderRegistryError:
             logger.warning(
                 "Provider '%s/%s' not found. Falling back to default.", category, name
             )
@@ -118,7 +118,7 @@ class ModelManager:
         name = config.audio.provider
         try:
             return ProviderRegistry.get("audio", name)
-        except KeyError:
+        except ProviderRegistryError:
             logger.warning(
                 "Audio provider '%s' not found. Falling back to faster_whisper.", name
             )

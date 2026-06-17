@@ -15,7 +15,7 @@ def setup_logging(level: int = logging.INFO) -> logging.Logger:
 
     Writes structured log lines to ``stdout`` with format::
 
-        2025-06-15 12:34:56 - semantixel - INFO - [file.py:42] - message
+        YYYY-MM-DD HH:MM:SS - semantixel - LEVEL - [filename.py:line] - message
 
     If the ``SEMANTIXEL_LOG_FILE`` environment variable is set, logs
     are also appended to that file.

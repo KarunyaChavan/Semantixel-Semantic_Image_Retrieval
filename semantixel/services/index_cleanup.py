@@ -80,12 +80,35 @@ class IndexCleanupService:
             return
 
         stale_list = list(stale_base_ids)
-        for coll in (image_collection, text_collection, audio_collection):
+        collections = (
+            ("image", image_collection),
+            ("text", text_collection),
+            ("audio", audio_collection),
+        )
+        successful_collections = []
+        failed_collections = []
+
+        for name, coll in collections:
             try:
                 coll.delete(ids=stale_list)
             except Exception as exc:
-                logger.warning("Cleanup error in collection: %s", exc)
+                failed_collections.append(name)
+                logger.warning("Cleanup error in %s collection: %s", name, exc)
+            else:
+                successful_collections.append(name)
 
-        logger.info(
-            "Cleaned up %d stale index entries", len(stale_list)
-        )
+        if not failed_collections:
+            logger.info("Cleaned up %d stale index entries", len(stale_list))
+        elif successful_collections:
+            logger.warning(
+                "Partially cleaned up %d stale index entries from %s collection(s); "
+                "failed collection(s): %s",
+                len(stale_list),
+                ", ".join(successful_collections),
+                ", ".join(failed_collections),
+            )
+        else:
+            logger.warning(
+                "Failed to clean up %d stale index entries from any collection",
+                len(stale_list),
+            )

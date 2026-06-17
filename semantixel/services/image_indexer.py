@@ -142,4 +142,4 @@ class ImageIndexer:
         """Fetch a remote image and return a PIL Image."""
         if google_drive_source and media.source == google_drive_source.SOURCE_NAME:
             return google_drive_source.fetch_image(media.locator)
-        raise ValueError("Unsupported media source: %s", media.source)
+        raise ValueError("Unsupported media source: %s" % media.source)
