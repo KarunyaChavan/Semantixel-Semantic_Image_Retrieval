@@ -8,6 +8,7 @@ from typing import List, Optional
 from semantixel.core.config import config
 from semantixel.core.logging import logger
 from semantixel.media import MediaDescriptor, describe_local_media
+from semantixel.media_types import is_video_file
 from semantixel.services.model_manager import model_manager
 from semantixel.utils.video_utils import extract_frames_in_memory
 
@@ -22,7 +23,6 @@ class ImageIndexer:
     def __init__(self, image_collection, text_collection):
         self.image_collection = image_collection
         self.text_collection = text_collection
-        self.video_extensions = {".mp4", ".mkv", ".avi", ".mov"}
 
     def needs_indexing(self, media: MediaDescriptor, deep_scan: bool = False) -> bool:
         """Check whether *media* is already indexed.
@@ -35,7 +35,7 @@ class ImageIndexer:
             ``True`` if the item should be indexed.
         """
         path = media.locator
-        is_video = path.lower().endswith(tuple(self.video_extensions))
+        is_video = is_video_file(path)
 
         if is_video:
             results = self.image_collection.get(where={"source_media_id": media.media_id})
@@ -98,7 +98,7 @@ class ImageIndexer:
 
         for media in visual_items:
             path = media.locator
-            is_video = path.lower().endswith(tuple(self.video_extensions))
+            is_video = is_video_file(path)
 
             if is_video:
                 for frame in extract_frames_in_memory(path):

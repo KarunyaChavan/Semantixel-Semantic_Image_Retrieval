@@ -3,6 +3,7 @@
 import os
 from typing import List, Optional, Tuple
 from semantixel.core.logging import logger
+from semantixel.media_types import is_media_file
 
 
 def scan_directory(directory: str, exclude_directories: List[str]) -> List[str]:
@@ -17,11 +18,6 @@ def scan_directory(directory: str, exclude_directories: List[str]) -> List[str]:
     Returns:
         List of media file paths found.
     """
-    media_extensions = {
-        ".jpg", ".jpeg", ".png", ".gif", ".bmp",
-        ".mp4", ".mkv", ".avi", ".mov",
-        ".mp3", ".wav", ".flac", ".m4a", ".aac",
-    }
     files = []
     try:
         if not os.path.isdir(directory):
@@ -31,7 +27,7 @@ def scan_directory(directory: str, exclude_directories: List[str]) -> List[str]:
                 if (
                     entry.is_file()
                     and not entry.name.startswith("._")
-                    and entry.name.lower().endswith(tuple(media_extensions))
+                    and is_media_file(entry.name)
                 ):
                     files.append(entry.path)
                 elif entry.is_dir():

@@ -15,6 +15,7 @@ from chromadb import PersistentClient
 from semantixel.core.config import config
 from semantixel.core.logging import logger
 from semantixel.media import MediaDescriptor, describe_local_media
+from semantixel.media_types import has_audio_modality, has_visual_modality
 from semantixel.sources import GoogleDriveSource
 from semantixel.services.image_indexer import ImageIndexer
 from semantixel.services.audio_indexer import AudioIndexer
@@ -98,16 +99,13 @@ class IndexService:
         """Route each item to the appropriate indexer."""
         from tqdm import tqdm
 
-        audio_extensions = {".mp3", ".wav", ".flac", ".m4a", ".aac"}
-        video_extensions = {".mp4", ".mkv", ".avi", ".mov"}
-
         audio_items = [
             m for m in media_items
-            if m.locator.lower().endswith(tuple(audio_extensions | video_extensions))
+            if has_audio_modality(m.locator)
         ]
         visual_items = [
             m for m in media_items
-            if not m.locator.lower().endswith(tuple(audio_extensions))
+            if has_visual_modality(m.locator)
         ]
 
         total_tasks = len(visual_items) + len(audio_items)

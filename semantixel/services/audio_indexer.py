@@ -5,6 +5,7 @@ from tqdm import tqdm
 from semantixel.core.config import config
 from semantixel.core.logging import logger
 from semantixel.media import MediaDescriptor
+from semantixel.media_types import (is_audio_file as path_is_audio_file,is_video_file as path_is_video_file,)
 
 
 class AudioIndexer:
@@ -19,16 +20,14 @@ class AudioIndexer:
     def __init__(self, text_collection, audio_collection):
         self.text_collection = text_collection
         self.audio_collection = audio_collection
-        self.video_extensions = {".mp4", ".mkv", ".avi", ".mov"}
-        self.audio_extensions = {".mp3", ".wav", ".flac", ".m4a", ".aac"}
 
     def is_audio_file(self, path: str) -> bool:
         """Check whether *path* is a supported audio format."""
-        return path.lower().endswith(tuple(self.audio_extensions))
+        return path_is_audio_file(path)
 
     def is_video_file(self, path: str) -> bool:
         """Check whether *path* is a supported video format."""
-        return path.lower().endswith(tuple(self.video_extensions))
+        return path_is_video_file(path)
 
     def index_audio(
         self,
