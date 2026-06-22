@@ -1,0 +1,131 @@
+// semantixel_inference.proto
+// Protocol definition for Semantixel gRPC Inference Service.
+// Exposes CLIP embedding and OCR extraction functionality
+// as standalone RPCs independent of the Flask REST layer.
+
+syntax = "proto3";
+
+package semantixel.inference;
+
+// SemantixelInferenceService exposes ML inference endpoints
+// that were previously only available through the Flask REST API.
+// This service is consumed by the Go scanner and the
+// Go GraphQL gateway.
+service SemantixelInference {
+  // EmbedImage accepts one or more image bytes and returns
+  // L2-normalized CLIP embedding vectors.
+  rpc EmbedImage(EmbedImageRequest) returns (EmbedImageResponse);
+
+  // EmbedText accepts one or more text queries and returns
+  // L2-normalized CLIP embedding vectors.
+  rpc EmbedText(EmbedTextRequest) returns (EmbedTextResponse);
+
+  // ExtractOCR accepts one or more image bytes and returns
+  // OCR-extracted text for each image.
+  rpc ExtractOCR(ExtractOCRRequest) returns (ExtractOCRResponse);
+
+  // HealthCheck returns the server status and loaded model info.
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// --- ServingStatus ---
+
+enum ServingStatus {
+  SERVING_STATUS_UNSPECIFIED = 0;
+  NOT_SERVING = 1;
+  LOADING = 2;
+  SERVING = 3;
+}
+
+// --- EmbedImage ---
+
+message EmbedImageRequest {
+  // Images encoded as raw bytes (JPEG, PNG, WebP, etc.).
+  // Multiple images are batched for efficiency.
+  repeated bytes images = 1;
+}
+
+message EmbedImageResponse {
+  // One embedding vector per input image.
+  // Each vector is L2-normalized to unit length.
+  repeated Embedding embeddings = 1;
+
+  // Name of the CLIP model checkpoint used (e.g. "openai/clip-vit-base-patch32").
+  string model_name = 2;
+
+  // Dimensionality of each embedding vector.
+  int32 embedding_dim = 3;
+}
+
+// --- EmbedText ---
+
+message EmbedTextRequest {
+  // Text queries to embed. Multiple texts are batched for efficiency.
+  repeated string texts = 1;
+}
+
+message EmbedTextResponse {
+  // One embedding vector per input text, preserving input order.
+  // Each vector is L2-normalized to unit length.
+  repeated Embedding embeddings = 1;
+
+  // Name of the CLIP model checkpoint used (e.g. "openai/clip-vit-base-patch32").
+  string model_name = 2;
+
+  // Dimensionality of each embedding vector.
+  int32 embedding_dim = 3;
+}
+
+// --- ExtractOCR ---
+
+message ExtractOCRRequest {
+  // Images encoded as raw bytes (JPEG, PNG, WebP, etc.).
+  repeated bytes images = 1;
+
+  // Confidence threshold (0.0 - 1.0). Tokens whose confidence falls
+  // below this value are discarded. Must be in [0.0, 1.0].
+  // When omitted the server applies 0.4 as the effective default.
+  optional float threshold = 2;
+}
+
+message OCRResult {
+  // Extracted text from a single image. May be empty if no
+  // readable text was found.
+  string text = 1;
+}
+
+message ExtractOCRResponse {
+  // One OCRResult per input image, preserving input order.
+  repeated OCRResult results = 1;
+}
+
+// --- HealthCheck ---
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  // Server readiness status.
+  ServingStatus status = 1;
+
+  // Whether the CLIP model is loaded.
+  bool clip_loaded = 2;
+
+  // Whether the OCR model is loaded.
+  bool ocr_loaded = 3;
+
+  // Device the models are running on (cpu, cuda, mps).
+  string device = 4;
+
+  // Name of the active CLIP model checkpoint.
+  string clip_model_name = 5;
+
+  // Name of the active OCR model architecture.
+  string ocr_model_name = 6;
+}
+
+// --- Shared Types ---
+
+message Embedding {
+  // Flat float32 embedding vector.
+  repeated float values = 1;
+}
