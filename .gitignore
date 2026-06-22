@@ -32,6 +32,9 @@ __pycache__/
 *.pyc
 *.pyo
 
+#Package build artifacts
+*.egg-info/
+
 #Ignoring config files
 config.yaml
 google_drive_token.json

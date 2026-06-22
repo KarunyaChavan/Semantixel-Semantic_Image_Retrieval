@@ -1,3 +1,9 @@
+"""Desktop settings GUI for Semantixel configuration.
+
+Provides a Tkinter/ttkbootstrap UI for editing directories, CLIP model
+selection, text embedding, OCR, and Google Drive settings.
+"""
+
 import tkinter as tk
 from tkinter import messagebox
 import ttkbootstrap as ttk
