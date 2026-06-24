@@ -36,10 +36,21 @@ def create_app() -> Flask:
     app.search_service = search_service
     app.google_drive_source = index_service.google_drive_source
 
-    try:
-        model_manager.clip.load()
-    except Exception as exc:
-        logger.warning("CLIP warmup skipped: %s", exc)
+    # Warm up all models eagerly so the first search request is fast
+    for name, loader in [
+        ("CLIP", model_manager.clip),
+        ("text_embed", model_manager.text_embed),
+    ]:
+        try:
+            loader.load()
+        except Exception as exc:
+            logger.warning("%s warmup skipped: %s", name, exc)
+
+    if config.audio.clap_enabled:
+        try:
+            model_manager.clap.load()
+        except Exception as exc:
+            logger.warning("CLAP warmup skipped: %s", exc)
 
     from semantixel.api.routes import main_bp
 

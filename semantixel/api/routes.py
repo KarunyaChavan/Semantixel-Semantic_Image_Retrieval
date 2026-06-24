@@ -49,8 +49,12 @@ def clip_text():
     threshold = float(data.get("threshold", 0))
     top_k = int(data.get("top_k", 5))
     media_type = data.get("media_type", "image")
-    results = current_app.search_service.semantic_text_search(query, top_k, threshold, media_type)
-    return jsonify(results)
+    try:
+        results = current_app.search_service.semantic_text_search(query, top_k, threshold, media_type)
+        return jsonify(results)
+    except Exception as exc:
+        logger.error("Semantic text search failed: %s", exc)
+        return jsonify([])
 
 
 @main_bp.route("/clip_image", methods=["POST"])
@@ -160,8 +164,46 @@ def graph_data():
     Returns:
         JSON object with ``nodes`` and ``links`` arrays.
     """
-    results = current_app.search_service.generate_graph_data()
-    return jsonify(results)
+    try:
+        results = current_app.search_service.generate_graph_data()
+        return jsonify(results)
+    except Exception as exc:
+        logger.error("Graph generation failed: %s", exc)
+        return jsonify({"nodes": [], "links": []})
+
+
+@main_bp.route("/subgraph_data", methods=["POST"])
+def subgraph_data():
+    """Return a subgraph restricted to the given composite IDs.
+
+    The UI calls this after a search when in graph-view mode to show
+    only the similarity relationships among the matched results.
+
+    Request JSON:
+        ``ids`` (list[str]): Composite IDs of the matched media items.
+
+    Returns:
+        JSON object with ``nodes`` and ``links`` arrays.
+    """
+    data = request.json or {}
+    ids = data.get("ids", [])
+    if not ids:
+        return jsonify({"nodes": [], "links": []})
+
+    try:
+        full = current_app.search_service.generate_graph_data()
+    except Exception as exc:
+        logger.error("Subgraph generation failed: %s", exc)
+        return jsonify({"nodes": [], "links": []})
+
+    id_set = set(ids)
+    nodes = [n for n in full["nodes"] if n["id"] in id_set]
+    node_ids = {n["id"] for n in nodes}
+    links = [
+        lnk for lnk in full["links"]
+        if lnk["source"] in node_ids and lnk["target"] in node_ids
+    ]
+    return jsonify({"nodes": nodes, "links": links})
 
 
 # Google Drive OAuth endpoints
