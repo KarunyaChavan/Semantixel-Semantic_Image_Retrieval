@@ -31,6 +31,7 @@ class InferenceServicer(semantixel_inference_pb2_grpc.SemantixelInferenceService
         """Initialise servicer with shared model providers."""
         self._clip = model_manager.clip
         self._ocr = model_manager.ocr
+        self._text_embed = model_manager.text_embed
 
     def _decode_images(
         self,
@@ -66,6 +67,10 @@ class InferenceServicer(semantixel_inference_pb2_grpc.SemantixelInferenceService
         det = getattr(self._ocr, "det_arch", "unknown")
         reco = getattr(self._ocr, "reco_arch", "unknown")
         return f"{det}+{reco}"
+
+    def _text_embed_model_name(self) -> str:
+        """Return the active text embed model checkpoint name."""
+        return getattr(self._text_embed, "checkpoint", "unknown")
 
     #  EmbedImage 
 
@@ -173,6 +178,44 @@ class InferenceServicer(semantixel_inference_pb2_grpc.SemantixelInferenceService
             semantixel_inference_pb2.OCRResult(text=t) for t in cleaned
         ]
         return semantixel_inference_pb2.ExtractOCRResponse(results=results)
+    
+
+    def TextEmbedMiniLM(
+        self,
+        request: semantixel_inference_pb2.TextEmbedMiniLMRequest,
+        context: grpc.ServicerContext,
+    ) -> semantixel_inference_pb2.TextEmbedMiniLMResponse:
+        """Produce embeddings for one or more texts via the configured text embed provider.
+
+        Used by the Go scanner to embed OCR text for the text_collection.
+        Uses a dedicated text embed model (MiniLM by default), separate from
+        the CLIP model used in EmbedText.
+
+        Args:
+            request: Contains text strings to embed (batched).
+            context: gRPC context for error reporting.
+
+        Returns:
+            TextEmbedMiniLMResponse with per-text embeddings, model name,
+            and embedding dimensionality.
+        """
+        if not request.texts:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "No texts provided")
+
+        embeddings = [
+            semantixel_inference_pb2.Embedding(
+                values=self._text_embed.get_embeddings(t),
+            )
+            for t in request.texts
+        ]
+
+        dim = len(embeddings[0].values) if embeddings else 0
+
+        return semantixel_inference_pb2.TextEmbedMiniLMResponse(
+            embeddings=embeddings,
+            model_name=self._text_embed_model_name(),
+            embedding_dim=dim,
+        )
 
     #  HealthCheck 
 
@@ -193,10 +236,11 @@ class InferenceServicer(semantixel_inference_pb2_grpc.SemantixelInferenceService
         """
         clip_loaded = self._clip.model is not None
         ocr_loaded = self._ocr.model is not None
+        text_embed_loaded = self._text_embed.model is not None
 
-        if clip_loaded and ocr_loaded:
+        if clip_loaded and ocr_loaded and text_embed_loaded:
             status = semantixel_inference_pb2.SERVING
-        elif clip_loaded or ocr_loaded:
+        elif clip_loaded or ocr_loaded or text_embed_loaded:
             status = semantixel_inference_pb2.LOADING
         else:
             status = semantixel_inference_pb2.NOT_SERVING
@@ -207,9 +251,11 @@ class InferenceServicer(semantixel_inference_pb2_grpc.SemantixelInferenceService
             status=status,
             clip_loaded=clip_loaded,
             ocr_loaded=ocr_loaded,
+            text_embed_loaded=text_embed_loaded,
             device=device,
             clip_model_name=self._clip_model_name(),
             ocr_model_name=self._ocr_model_name(),
+            text_embed_model_name=self._text_embed_model_name(),
         )
 
 
@@ -219,9 +265,9 @@ class GrpcInferenceServer:
     Usage::
 
         server = GrpcInferenceServer()
-        server.start()
-        # ... or async:
-        # await server.serve()
+        await server.start()
+        # ... or simply:
+        await server.serve()
     """
 
     def __init__(
@@ -241,7 +287,7 @@ class GrpcInferenceServer:
         """Return the ``host:port`` string for this server instance."""
         return f"{self.host}:{self.port}"
 
-    def start(self) -> None:
+    async def start(self) -> None:
         """Start the gRPC async server and bind to the configured address."""
         self._server = grpc.aio.server(
             futures.ThreadPoolExecutor(max_workers=self.max_workers),
@@ -254,10 +300,11 @@ class GrpcInferenceServer:
 
         self._server.add_insecure_port(self.address)
         logger.info("gRPC Inference Server starting on %s", self.address)
+        await self._server.start()
 
     async def serve(self) -> None:
         """Start and await server termination with graceful shutdown."""
-        self.start()
+        await self.start()
         await self._wait_for_termination()
 
     async def _wait_for_termination(self) -> None:
@@ -327,11 +374,18 @@ def serve_forever(
             except NotImplementedError:
                 pass
 
-        server.start()
-        logger.info("gRPC Inference Server is ready on %s", server.address)
+        await server.start()
+        msg = f"gRPC Inference Server is ready on {server.address}"
+        logger.info(msg)
+        print(f"[semantixel] {msg}", flush=True)
 
-        await stop_event.wait()
-        await server.stop()
+        try:
+            await stop_event.wait()
+        except asyncio.CancelledError:
+            logger.info("Server cancelled via Ctrl+C")
+            print("[semantixel] Shutting down...", flush=True)
+        finally:
+            await server.stop()
 
     asyncio.run(_run())
 

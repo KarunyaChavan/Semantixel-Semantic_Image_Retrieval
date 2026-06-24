@@ -24,6 +24,11 @@ service SemantixelInference {
   // OCR-extracted text for each image.
   rpc ExtractOCR(ExtractOCRRequest) returns (ExtractOCRResponse);
 
+  // TextEmbedMiniLM accepts one or more text strings and returns
+  // embeddings from the configured text embed provider (MiniLM by default).
+  // Used by the Go scanner to embed OCR text for the text_collection.
+  rpc TextEmbedMiniLM(TextEmbedMiniLMRequest) returns (TextEmbedMiniLMResponse);
+
   // HealthCheck returns the server status and loaded model info.
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
 }
@@ -99,6 +104,25 @@ message ExtractOCRResponse {
   repeated OCRResult results = 1;
 }
 
+// --- TextEmbedMiniLM ---
+
+message TextEmbedMiniLMRequest {
+  // Text strings to embed. Multiple texts are batched for efficiency.
+  repeated string texts = 1;
+}
+
+message TextEmbedMiniLMResponse {
+  // One embedding vector per input text, preserving input order.
+  // Each vector is L2-normalized to unit length.
+  repeated Embedding embeddings = 1;
+
+  // Name of the text embed model checkpoint (e.g. "sentence-transformers/all-MiniLM-L6-v2").
+  string model_name = 2;
+
+  // Dimensionality of each embedding vector.
+  int32 embedding_dim = 3;
+}
+
 // --- HealthCheck ---
 
 message HealthCheckRequest {}
@@ -121,6 +145,12 @@ message HealthCheckResponse {
 
   // Name of the active OCR model architecture.
   string ocr_model_name = 6;
+
+  // Whether the text embed model is loaded.
+  bool text_embed_loaded = 7;
+
+  // Name of the active text embed model checkpoint.
+  string text_embed_model_name = 8;
 }
 
 // --- Shared Types ---
