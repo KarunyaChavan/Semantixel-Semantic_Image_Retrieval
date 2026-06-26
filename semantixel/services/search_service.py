@@ -9,6 +9,7 @@ The :class:`SearchService` is the public facade for all query modes:
 """
 
 import io
+import os
 import threading
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse
@@ -65,7 +66,6 @@ class SearchService:
         self.index_service = index_service
         self.face_service = face_service
         self.bm25_service = index_service.bm25_service
-        self.bm25_service = index_service.bm25_service
 
         self._modalities: List[tuple[Callable, Any, str]] = [
             (model_manager.clip.get_text_embeddings, "images", "clip"),
@@ -99,13 +99,19 @@ class SearchService:
             cache._clients.append(client)
         return getattr(cache, attr)
 
+    def _get_collections_and_modalities(self):
+        """Ensure CLAP modality is registered when audio is enabled."""
+        if config.audio.clap_enabled:
+            has_clap = any(m[1] == "ambient_audio" for m in self._modalities)
+            if not has_clap:
+                self._modalities.append(
+                    (model_manager.clap.get_text_embeddings, "ambient_audio", "clap")
+                )
+
     def _get_graph_service(self):
         """Return a GraphService using this thread's collection."""
+        self._get_collections_and_modalities()
         return GraphService(self.image_collection)
-        if config.audio.clap_enabled:
-            self._modalities.append(
-                (model_manager.clap.get_text_embeddings, "ambient_audio", "clap")
-            )
 
     # Public API
 
@@ -139,6 +145,7 @@ class SearchService:
         query_k = top_k * 5
         is_lyrics = self._is_lyrics_query(query)
 
+        self._get_collections_and_modalities()
         combined_items = []
         for embedding_fn, collection_name, modality in self._modalities:
             collection = (
@@ -192,8 +199,16 @@ class SearchService:
 
         Returns:
             List of result dicts ordered by descending similarity.
+
+        Raises:
+            ValueError: If the image path does not exist or is inaccessible.
         """
         query_media, query_input = self._resolve_query_media(image_path)
+
+        if isinstance(query_input, str):
+            if not os.path.exists(query_input):
+                raise ValueError("Image file not found: %s" % query_input)
+
         embedding = model_manager.clip.get_image_embeddings([query_input])[0]
 
         query_k = top_k * 5

@@ -267,13 +267,14 @@ class InferenceServicer(semantixel_inference_pb2_grpc.SemantixelInferenceService
 
     def _descriptor_from_metadata(self, meta: semantixel_inference_pb2.IndexMediaMetadata):
         """Convert proto metadata back to a MediaDescriptor."""
-        from semantixel.media import describe_local_media, MediaDescriptor
+        from semantixel.media import describe_local_media, MediaDescriptor, build_media_id
         if meta.source == "local":
             return describe_local_media(meta.locator)
         return MediaDescriptor(
             source=meta.source,
-            media_id=f"{meta.source}:::{meta.locator}",
             locator=meta.locator,
+            media_type="image",
+            media_id=build_media_id(meta.source, meta.locator),
             display_path=meta.display_path
         )
 
@@ -352,6 +353,10 @@ class InferenceServicer(semantixel_inference_pb2_grpc.SemantixelInferenceService
                     metadatas=[metadatas[idx]],
                     documents=[text],
                 )
+                self._index_service.bm25_service.add_document(ids[idx], text)
+
+        # Rebuild BM25 keyword index so text-content search works immediately
+        self._index_service.bm25_service.rebuild(save=True)
 
         return semantixel_inference_pb2.IndexResponse(success=True)
 

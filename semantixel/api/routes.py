@@ -90,8 +90,11 @@ def clip_image():
 
     try:
         results = current_app.search_service.semantic_image_search(query, top_k, threshold, media_type)
-    except ValueError as exc:
+    except (ValueError, FileNotFoundError) as exc:
         abort(400, str(exc))
+    except Exception as exc:
+        logger.error("Similar image search failed: %s", exc)
+        return jsonify([])
     return jsonify(results)
 
 
