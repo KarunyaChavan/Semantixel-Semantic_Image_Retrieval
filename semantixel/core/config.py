@@ -201,10 +201,9 @@ def load_config(
         except OSError:
             pass
 
-    # Auto-compute redirect_uri from the configured port.
-    if not gd.get("redirect_uri") or gd["redirect_uri"] == GoogleDriveConfig.model_fields["redirect_uri"].default:
-        port = config_data.get("port", 23107)
-        gd["redirect_uri"] = "http://localhost:%d/integrations/google_drive/auth/callback" % port
+    # Use the default redirect_uri if not explicitly set.
+    if not gd.get("redirect_uri"):
+        gd["redirect_uri"] = GoogleDriveConfig.model_fields["redirect_uri"].default
 
     return SemantixelConfig(**config_data)
 

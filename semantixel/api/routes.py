@@ -155,12 +155,28 @@ def embed_text():
 
 @main_bp.route("/graph_data", methods=["GET"])
 def graph_data():
-    """Return the semantic similarity graph.
+    """Return the full semantic similarity graph.
 
     Returns:
         JSON object with ``nodes`` and ``links`` arrays.
     """
     results = current_app.search_service.generate_graph_data()
+    return jsonify(results)
+
+
+@main_bp.route("/subgraph_data", methods=["POST"])
+def subgraph_data():
+    """Return a filtered graph for the given set of result IDs.
+
+    Request JSON:
+        ``ids`` (list[str]): ChromaDB IDs to include.
+
+    Returns:
+        JSON object with ``nodes`` and ``links`` arrays.
+    """
+    data = request.json or {}
+    ids = data.get("ids", [])
+    results = current_app.search_service.generate_subgraph_data(ids)
     return jsonify(results)
 
 
