@@ -25,12 +25,13 @@ class FaceService:
 
     CACHE_TTL = 120  # seconds between re-scans
 
-    def __init__(self, face_db_path: str = "face_db/known_faces.pkl"):
+    def __init__(self, face_db_path: str = "face_db/known_faces.pkl", face_data_dir: str = "face_data"):
         self.face_db_path = face_db_path
         self.known_faces: Dict[str, list] = {}
         self._cached_paths: List[str] = []
         self._cache_timestamp: float = 0.0
         self.load_db()
+        self.register_faces_from_directory(face_data_dir)
 
     # Database management
 
@@ -56,9 +57,63 @@ class FaceService:
             pickle.dump(self.known_faces, f)
         logger.info("Saved %d known faces", len(self.known_faces))
 
+    # Registration
+
+    def register_face(self, name: str, image_path: str) -> bool:
+        """Encode a face from an image and add it to the known-faces database.
+
+        Args:
+            name: Person name (case-insensitive, stored lowercased).
+            image_path: Path to a reference photo containing the face.
+
+        Returns:
+            True if a face was successfully encoded and stored.
+        """
+        try:
+            embeddings = DeepFace.represent(
+                img_path=image_path, model_name="Facenet", enforce_detection=False
+            )
+            if not embeddings:
+                logger.warning("No face detected in %s", image_path)
+                return False
+            self.known_faces[name.lower().strip()] = embeddings[0]["embedding"]
+            logger.info("Registered face for '%s' from %s", name, image_path)
+            return True
+        except Exception as exc:
+            logger.error("Failed to register face for '%s': %s", name, exc)
+            return False
+
+    def register_faces_from_directory(self, directory: str = "face_data") -> int:
+        """Register faces from images in a directory where the filename (minus
+        extension) is used as the person name.
+
+        Skips names that are already in the database.
+
+        Args:
+            directory: Path to the folder containing reference face images.
+
+        Returns:
+            Number of faces newly registered.
+        """
+        if not os.path.isdir(directory):
+            return 0
+        count = 0
+        for fname in sorted(os.listdir(directory)):
+            if not fname.lower().endswith((".png", ".jpg", ".jpeg")):
+                continue
+            name = os.path.splitext(fname)[0].lower().strip()
+            if name in self.known_faces:
+                continue
+            path = os.path.join(directory, fname)
+            if self.register_face(name, path):
+                count += 1
+        if count > 0:
+            self.save_db()
+        return count
+
     # Search
 
-    def search_by_name(self, name_query: str, threshold: float = 0.6) -> List[str]:
+    def search_by_name(self, name_query: str, threshold: float = 0.75) -> List[str]:
         """Find images containing a known person.
 
         Args:
