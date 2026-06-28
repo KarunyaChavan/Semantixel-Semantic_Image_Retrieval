@@ -50,3 +50,9 @@ graphify-out/
 
 #Generated gRPC stubs (regenerate via python scripts/generate_proto.py)
 semantixel/*_pb2*.py
+
+#Scanner executable
+scanner.exe
+
+#Auto-generated protobuf Go stubs
+cmd/scanner/semantixelpb/*.pb.go
