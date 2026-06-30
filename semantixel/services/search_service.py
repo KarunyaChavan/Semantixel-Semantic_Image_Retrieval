@@ -319,6 +319,10 @@ class SearchService:
         """Delegate to :class:`GraphService`."""
         return self._get_graph_service().generate()
 
+    def generate_subgraph_data(self, ids: List[str]) -> Dict[str, Any]:
+        """Delegate filtered subgraph to :class:`GraphService`."""
+        return self.graph_service.generate_for_ids(ids)
+
     # Internal helpers
 
     @staticmethod

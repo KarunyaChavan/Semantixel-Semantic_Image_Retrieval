@@ -28,7 +28,7 @@ class GraphService:
         self.image_collection = image_collection
 
     def generate(self) -> Dict[str, Any]:
-        """Build and return the graph.
+        """Build and return the full graph.
 
         Returns:
             A dict with ``"nodes"`` and ``"links"`` lists suitable for
@@ -55,6 +55,37 @@ class GraphService:
 
         logger.info(
             "Generated Semantic Graph: %d nodes, %d edges in %.3fs",
+            len(nodes),
+            len(links),
+            time.time() - t0,
+        )
+        return {"nodes": nodes, "links": links}
+
+    def generate_for_ids(self, ids: List[str]) -> Dict[str, Any]:
+        """Build a filtered graph containing only the specified IDs.
+
+        Args:
+            ids: Subset of ChromaDB IDs to include in the graph.
+
+        Returns:
+            A dict with ``"nodes"`` and ``"links"`` lists.
+        """
+        if not ids:
+            return {"nodes": [], "links": []}
+
+        t0 = time.time()
+        data = self.image_collection.get(
+            ids=ids, include=["embeddings", "metadatas"]
+        )
+        result_ids = data["ids"]
+        if not result_ids:
+            return {"nodes": [], "links": []}
+
+        nodes = self._build_nodes(result_ids, data.get("metadatas") or [])
+        links = self._build_links(result_ids, data["embeddings"])
+
+        logger.info(
+            "Generated Subgraph: %d nodes, %d edges in %.3fs",
             len(nodes),
             len(links),
             time.time() - t0,

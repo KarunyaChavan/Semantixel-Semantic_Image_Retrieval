@@ -101,11 +101,11 @@ class IndexService:
 
         audio_items = [
             m for m in media_items
-            if has_audio_modality(m.locator)
+            if has_audio_modality(m.display_path)
         ]
         visual_items = [
             m for m in media_items
-            if has_visual_modality(m.locator)
+            if has_visual_modality(m.display_path)
         ]
 
         total_tasks = len(visual_items) + len(audio_items)

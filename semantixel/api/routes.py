@@ -162,7 +162,7 @@ def embed_text():
 
 @main_bp.route("/graph_data", methods=["GET"])
 def graph_data():
-    """Return the semantic similarity graph.
+    """Return the full semantic similarity graph.
 
     Returns:
         JSON object with ``nodes`` and ``links`` arrays.
@@ -207,6 +207,22 @@ def subgraph_data():
         if lnk["source"] in node_ids and lnk["target"] in node_ids
     ]
     return jsonify({"nodes": nodes, "links": links})
+
+
+@main_bp.route("/subgraph_data", methods=["POST"])
+def subgraph_data():
+    """Return a filtered graph for the given set of result IDs.
+
+    Request JSON:
+        ``ids`` (list[str]): ChromaDB IDs to include.
+
+    Returns:
+        JSON object with ``nodes`` and ``links`` arrays.
+    """
+    data = request.json or {}
+    ids = data.get("ids", [])
+    results = current_app.search_service.generate_subgraph_data(ids)
+    return jsonify(results)
 
 
 # Google Drive OAuth endpoints
