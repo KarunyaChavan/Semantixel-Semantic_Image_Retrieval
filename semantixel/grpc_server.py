@@ -38,6 +38,25 @@ class InferenceServicer(semantixel_inference_pb2_grpc.SemantixelInferenceService
         from semantixel.services.index_service import IndexService
         self._index_service = IndexService()
 
+        # Index Google Drive items in background — Go scanner skips these
+        gdrive = self._index_service.google_drive_source
+        if gdrive.is_enabled():
+            import threading
+            def _index_drive():
+                try:
+                    items = gdrive.list_media()
+                    if items:
+                        self._index_service.image_indexer.index_images(
+                            items, google_drive_source=gdrive
+                        )
+                        self._index_service.bm25_service.rebuild_from_collection(
+                            self._index_service.text_collection
+                        )
+                except Exception as exc:
+                    logger.warning("Google Drive indexing skipped: %s", exc)
+            t = threading.Thread(target=_index_drive, daemon=True)
+            t.start()
+
     def _decode_images(
         self,
         blobs: List[bytes],
