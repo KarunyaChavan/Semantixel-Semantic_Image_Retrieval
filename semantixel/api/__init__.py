@@ -36,10 +36,41 @@ def create_app() -> Flask:
     app.search_service = search_service
     app.google_drive_source = index_service.google_drive_source
 
-    try:
-        model_manager.clip.load()
-    except Exception as exc:
-        logger.warning("CLIP warmup skipped: %s", exc)
+    # Warm up all models eagerly so the first search request is fast
+    for name, loader in [
+        ("CLIP", model_manager.clip),
+        ("text_embed", model_manager.text_embed),
+    ]:
+        try:
+            loader.load()
+        except Exception as exc:
+            logger.warning("%s warmup skipped: %s", name, exc)
+
+    if config.audio.clap_enabled:
+        try:
+            model_manager.clap.load()
+        except Exception as exc:
+            logger.warning("CLAP warmup skipped: %s", exc)
+
+    # Index Google Drive items — the Go scanner only handles local files.
+    # Runs in a daemon thread so it never blocks server startup.
+    gdrive = index_service.google_drive_source
+    if gdrive.is_enabled():
+        import threading
+        def _index_drive():
+            try:
+                items = gdrive.list_media()
+                if items:
+                    index_service.image_indexer.index_images(
+                        items, google_drive_source=gdrive
+                    )
+                    index_service.bm25_service.rebuild_from_collection(
+                        index_service.text_collection
+                    )
+            except Exception as exc:
+                logger.warning("Google Drive indexing skipped: %s", exc)
+        t = threading.Thread(target=_index_drive, daemon=True)
+        t.start()
 
     from semantixel.api.routes import main_bp
 

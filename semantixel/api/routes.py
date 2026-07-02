@@ -49,8 +49,12 @@ def clip_text():
     threshold = float(data.get("threshold", 0))
     top_k = int(data.get("top_k", 5))
     media_type = data.get("media_type", "image")
-    results = current_app.search_service.semantic_text_search(query, top_k, threshold, media_type)
-    return jsonify(results)
+    try:
+        results = current_app.search_service.semantic_text_search(query, top_k, threshold, media_type)
+        return jsonify(results)
+    except Exception as exc:
+        logger.error("Semantic text search failed: %s", exc)
+        return jsonify([])
 
 
 @main_bp.route("/clip_image", methods=["POST"])
@@ -86,8 +90,11 @@ def clip_image():
 
     try:
         results = current_app.search_service.semantic_image_search(query, top_k, threshold, media_type)
-    except ValueError as exc:
+    except (ValueError, FileNotFoundError) as exc:
         abort(400, str(exc))
+    except Exception as exc:
+        logger.error("Similar image search failed: %s", exc)
+        return jsonify([])
     return jsonify(results)
 
 
@@ -160,8 +167,12 @@ def graph_data():
     Returns:
         JSON object with ``nodes`` and ``links`` arrays.
     """
-    results = current_app.search_service.generate_graph_data()
-    return jsonify(results)
+    try:
+        results = current_app.search_service.generate_graph_data()
+        return jsonify(results)
+    except Exception as exc:
+        logger.error("Graph generation failed: %s", exc)
+        return jsonify({"nodes": [], "links": []})
 
 
 @main_bp.route("/subgraph_data", methods=["POST"])

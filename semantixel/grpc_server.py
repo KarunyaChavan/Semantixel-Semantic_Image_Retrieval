@@ -31,6 +31,31 @@ class InferenceServicer(semantixel_inference_pb2_grpc.SemantixelInferenceService
         """Initialise servicer with shared model providers."""
         self._clip = model_manager.clip
         self._ocr = model_manager.ocr
+        self._text_embed = model_manager.text_embed
+
+        # Initialise IndexService (creates ChromaDB PersistentClient)
+        # We do this here so it shares the single DB lock when gRPC serves.
+        from semantixel.services.index_service import IndexService
+        self._index_service = IndexService()
+
+        # Index Google Drive items in background — Go scanner skips these
+        gdrive = self._index_service.google_drive_source
+        if gdrive.is_enabled():
+            import threading
+            def _index_drive():
+                try:
+                    items = gdrive.list_media()
+                    if items:
+                        self._index_service.image_indexer.index_images(
+                            items, google_drive_source=gdrive
+                        )
+                        self._index_service.bm25_service.rebuild_from_collection(
+                            self._index_service.text_collection
+                        )
+                except Exception as exc:
+                    logger.warning("Google Drive indexing skipped: %s", exc)
+            t = threading.Thread(target=_index_drive, daemon=True)
+            t.start()
 
     def _decode_images(
         self,
@@ -66,6 +91,10 @@ class InferenceServicer(semantixel_inference_pb2_grpc.SemantixelInferenceService
         det = getattr(self._ocr, "det_arch", "unknown")
         reco = getattr(self._ocr, "reco_arch", "unknown")
         return f"{det}+{reco}"
+
+    def _text_embed_model_name(self) -> str:
+        """Return the active text embed model checkpoint name."""
+        return getattr(self._text_embed, "checkpoint", "unknown")
 
     #  EmbedImage 
 
@@ -173,6 +202,44 @@ class InferenceServicer(semantixel_inference_pb2_grpc.SemantixelInferenceService
             semantixel_inference_pb2.OCRResult(text=t) for t in cleaned
         ]
         return semantixel_inference_pb2.ExtractOCRResponse(results=results)
+    
+
+    def TextEmbedMiniLM(
+        self,
+        request: semantixel_inference_pb2.TextEmbedMiniLMRequest,
+        context: grpc.ServicerContext,
+    ) -> semantixel_inference_pb2.TextEmbedMiniLMResponse:
+        """Produce embeddings for one or more texts via the configured text embed provider.
+
+        Used by the Go scanner to embed OCR text for the text_collection.
+        Uses a dedicated text embed model (MiniLM by default), separate from
+        the CLIP model used in EmbedText.
+
+        Args:
+            request: Contains text strings to embed (batched).
+            context: gRPC context for error reporting.
+
+        Returns:
+            TextEmbedMiniLMResponse with per-text embeddings, model name,
+            and embedding dimensionality.
+        """
+        if not request.texts:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "No texts provided")
+
+        embeddings = [
+            semantixel_inference_pb2.Embedding(
+                values=self._text_embed.get_embeddings(t),
+            )
+            for t in request.texts
+        ]
+
+        dim = len(embeddings[0].values) if embeddings else 0
+
+        return semantixel_inference_pb2.TextEmbedMiniLMResponse(
+            embeddings=embeddings,
+            model_name=self._text_embed_model_name(),
+            embedding_dim=dim,
+        )
 
     #  HealthCheck 
 
@@ -193,10 +260,11 @@ class InferenceServicer(semantixel_inference_pb2_grpc.SemantixelInferenceService
         """
         clip_loaded = self._clip.model is not None
         ocr_loaded = self._ocr.model is not None
+        text_embed_loaded = self._text_embed.model is not None
 
-        if clip_loaded and ocr_loaded:
+        if clip_loaded and ocr_loaded and text_embed_loaded:
             status = semantixel_inference_pb2.SERVING
-        elif clip_loaded or ocr_loaded:
+        elif clip_loaded or ocr_loaded or text_embed_loaded:
             status = semantixel_inference_pb2.LOADING
         else:
             status = semantixel_inference_pb2.NOT_SERVING
@@ -207,10 +275,135 @@ class InferenceServicer(semantixel_inference_pb2_grpc.SemantixelInferenceService
             status=status,
             clip_loaded=clip_loaded,
             ocr_loaded=ocr_loaded,
+            text_embed_loaded=text_embed_loaded,
             device=device,
             clip_model_name=self._clip_model_name(),
             ocr_model_name=self._ocr_model_name(),
+            text_embed_model_name=self._text_embed_model_name(),
         )
+
+    #  Indexing Endpoints (For Go Scanner) 
+
+    def _descriptor_from_metadata(self, meta: semantixel_inference_pb2.IndexMediaMetadata):
+        """Convert proto metadata back to a MediaDescriptor."""
+        from semantixel.media import describe_local_media, MediaDescriptor, build_media_id
+        if meta.source == "local":
+            return describe_local_media(meta.locator)
+        return MediaDescriptor(
+            source=meta.source,
+            locator=meta.locator,
+            media_type="image",
+            media_id=build_media_id(meta.source, meta.locator),
+            display_path=meta.display_path
+        )
+
+    def CheckExists(
+        self,
+        request: semantixel_inference_pb2.CheckExistsRequest,
+        context: grpc.ServicerContext,
+    ) -> semantixel_inference_pb2.CheckExistsResponse:
+        """Check if media items are fully indexed."""
+        from semantixel.core.config import config
+        exists_list = []
+        for m in request.media:
+            desc = self._descriptor_from_metadata(m)
+            is_vid = self._index_service.audio_indexer.is_video_file(desc.locator)
+            is_aud = self._index_service.audio_indexer.is_audio_file(desc.locator)
+
+            needs = False
+            if is_vid or (not is_aud):
+                needs = self._index_service.image_indexer.needs_indexing(desc)
+            
+            if (is_vid or is_aud) and not needs:
+                # Also check audio status
+                if config.audio.transcription_enabled:
+                    tid = f"{desc.media_id}:::audio"
+                    res = self._index_service.text_collection.get(ids=[tid])
+                    if not res["ids"]:
+                        needs = True
+                if config.audio.clap_enabled and not needs:
+                    aid = f"{desc.media_id}:::ambient"
+                    res = self._index_service.audio_collection.get(ids=[aid])
+                    if not res["ids"]:
+                        needs = True
+            exists_list.append(not needs)
+
+        return semantixel_inference_pb2.CheckExistsResponse(exists=exists_list)
+
+    def IndexImages(
+        self,
+        request: semantixel_inference_pb2.IndexImagesRequest,
+        context: grpc.ServicerContext,
+    ) -> semantixel_inference_pb2.IndexResponse:
+        """Process raw image bytes directly from the scanner."""
+        if not request.images or len(request.images) != len(request.metadata):
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Mismatched images and metadata")
+
+        pil_images = self._decode_images(request.images, context)
+        ids = []
+        metadatas = []
+        for meta in request.metadata:
+            desc = self._descriptor_from_metadata(meta)
+            ids.append(desc.media_id)
+            metadatas.append({
+                "source": desc.source,
+                "source_media_id": desc.media_id,
+                "locator": desc.locator,
+                "display_path": desc.display_path,
+                "type": "image",
+            })
+
+        # 1. Embed Images
+        image_embeddings = self._clip.get_image_embeddings(pil_images)
+        self._index_service.image_collection.upsert(
+            ids=ids,
+            embeddings=image_embeddings,
+            metadatas=metadatas,
+        )
+
+        # 2. Extract OCR
+        ocr_texts = self._ocr.apply_ocr(pil_images)
+        for idx, text in enumerate(ocr_texts):
+            if text:
+                text_embedding = self._text_embed.get_embeddings(text)
+                self._index_service.text_collection.upsert(
+                    ids=[ids[idx]],
+                    embeddings=[text_embedding],
+                    metadatas=[metadatas[idx]],
+                    documents=[text],
+                )
+                self._index_service.bm25_service.add_document(ids[idx], text)
+
+        # Rebuild BM25 keyword index so text-content search works immediately
+        self._index_service.bm25_service.rebuild(save=True)
+
+        return semantixel_inference_pb2.IndexResponse(success=True)
+
+    def IndexVideo(
+        self,
+        request: semantixel_inference_pb2.IndexVideoRequest,
+        context: grpc.ServicerContext,
+    ) -> semantixel_inference_pb2.IndexResponse:
+        """Delegate video keyframe extraction to Python."""
+        desc = self._descriptor_from_metadata(request.metadata)
+        try:
+            self._index_service.image_indexer.index_images([desc])
+            return semantixel_inference_pb2.IndexResponse(success=True)
+        except Exception as exc:
+            return semantixel_inference_pb2.IndexResponse(success=False, error_message=str(exc))
+
+    def IndexAudio(
+        self,
+        request: semantixel_inference_pb2.IndexAudioRequest,
+        context: grpc.ServicerContext,
+    ) -> semantixel_inference_pb2.IndexResponse:
+        """Delegate audio indexing/transcription to Python."""
+        desc = self._descriptor_from_metadata(request.metadata)
+        try:
+            self._index_service.audio_indexer.index_audio([desc])
+            return semantixel_inference_pb2.IndexResponse(success=True)
+        except Exception as exc:
+            return semantixel_inference_pb2.IndexResponse(success=False, error_message=str(exc))
 
 
 class GrpcInferenceServer:
@@ -219,9 +412,9 @@ class GrpcInferenceServer:
     Usage::
 
         server = GrpcInferenceServer()
-        server.start()
-        # ... or async:
-        # await server.serve()
+        await server.start()
+        # ... or simply:
+        await server.serve()
     """
 
     def __init__(
@@ -241,10 +434,24 @@ class GrpcInferenceServer:
         """Return the ``host:port`` string for this server instance."""
         return f"{self.host}:{self.port}"
 
-    def start(self) -> None:
+    async def start(self) -> None:
         """Start the gRPC async server and bind to the configured address."""
+        # Warm up models so HealthCheck returns SERVING
+        try:
+            logger.info("Warming up models...")
+            model_manager.clip.load()
+            model_manager.ocr.load()
+            model_manager.text_embed.load()
+            logger.info("Models loaded successfully")
+        except Exception as exc:
+            logger.warning("Model warmup failed or partially skipped: %s", exc)
+
         self._server = grpc.aio.server(
             futures.ThreadPoolExecutor(max_workers=self.max_workers),
+            options=[
+                ("grpc.max_send_message_length", 512 * 1024 * 1024),
+                ("grpc.max_receive_message_length", 512 * 1024 * 1024),
+            ],
         )
 
         semantixel_inference_pb2_grpc.add_SemantixelInferenceServicer_to_server(
@@ -254,10 +461,11 @@ class GrpcInferenceServer:
 
         self._server.add_insecure_port(self.address)
         logger.info("gRPC Inference Server starting on %s", self.address)
+        await self._server.start()
 
     async def serve(self) -> None:
         """Start and await server termination with graceful shutdown."""
-        self.start()
+        await self.start()
         await self._wait_for_termination()
 
     async def _wait_for_termination(self) -> None:
@@ -327,11 +535,18 @@ def serve_forever(
             except NotImplementedError:
                 pass
 
-        server.start()
-        logger.info("gRPC Inference Server is ready on %s", server.address)
+        await server.start()
+        msg = f"gRPC Inference Server is ready on {server.address}"
+        logger.info(msg)
+        print(f"[semantixel] {msg}", flush=True)
 
-        await stop_event.wait()
-        await server.stop()
+        try:
+            await stop_event.wait()
+        except asyncio.CancelledError:
+            logger.info("Server cancelled via Ctrl+C")
+            print("[semantixel] Shutting down...", flush=True)
+        finally:
+            await server.stop()
 
     asyncio.run(_run())
 

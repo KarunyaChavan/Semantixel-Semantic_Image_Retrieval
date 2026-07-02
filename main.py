@@ -108,7 +108,7 @@ def main():
     if args.serve:
         from wsgi import app
 
-        app.run(host="0.0.0.0", port=config.port)
+        app.run(host="0.0.0.0", port=config.port, threaded=True)
         return
 
     # Default: scan then serve
@@ -118,7 +118,7 @@ def main():
 
     from wsgi import app
 
-    app.run(host="0.0.0.0", port=config.port)
+    app.run(host="0.0.0.0", port=config.port, threaded=True)
 
 
 if __name__ == "__main__":

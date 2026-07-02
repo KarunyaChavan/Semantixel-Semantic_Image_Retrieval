@@ -9,6 +9,8 @@ The :class:`SearchService` is the public facade for all query modes:
 """
 
 import io
+import os
+import threading
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -43,11 +45,13 @@ class SearchService:
     Attributes:
         index_service: The :class:`IndexService` used for ChromaDB access.
         face_service: The :class:`FaceService` for face-name lookups.
-        image_collection: ChromaDB collection for CLIP image embeddings.
-        text_collection: ChromaDB collection for text embeddings.
-        audio_collection: ChromaDB collection for CLAP audio embeddings.
         bm25_service: BM25 keyword search index.
         graph_service: :class:`GraphService` for similarity graph generation.
+
+    Note:
+        ChromaDB's ``PersistentClient`` (DuckDB) is **not** thread-safe.
+        Each thread gets its own client via ``threading.local()`` so that
+        queries on separate requests never share a corrupted connection.
     """
 
     MODALITY_RANGES = {
@@ -55,24 +59,59 @@ class SearchService:
         "minilm": {"min_s": 0.15, "max_s": 0.75},
         "clap": {"min_s": 0.10, "max_s": 0.30},
     }
+    _thread_local = threading.local()
 
     def __init__(self, index_service: IndexService, face_service: FaceService):
+        self._db_path = index_service.db_path
         self.index_service = index_service
         self.face_service = face_service
-        self.image_collection = index_service.image_collection
-        self.text_collection = index_service.text_collection
-        self.audio_collection = index_service.audio_collection
         self.bm25_service = index_service.bm25_service
-        self.graph_service = GraphService(self.image_collection)
 
         self._modalities: List[tuple[Callable, Any, str]] = [
-            (model_manager.clip.get_text_embeddings, self.image_collection, "clip"),
-            (model_manager.text_embed.get_embeddings, self.text_collection, "minilm"),
+            (model_manager.clip.get_text_embeddings, "images", "clip"),
+            (model_manager.text_embed.get_embeddings, "texts", "minilm"),
         ]
+
+    @property
+    def image_collection(self):
+        return self._get_collection("images")
+
+    @property
+    def text_collection(self):
+        return self._get_collection("texts")
+
+    @property
+    def audio_collection(self):
+        return self._get_collection("ambient_audio")
+
+    def _get_collection(self, name: str):
+        """Return a thread-local ChromaDB collection, creating the client lazily."""
+        cache = self._thread_local
+        attr = f"_collection_{name}"
+        if not hasattr(cache, attr):
+            from chromadb import PersistentClient
+            client = PersistentClient(path=self._db_path)
+            coll = client.get_or_create_collection(name, metadata={"hnsw:space": "cosine"})
+            setattr(cache, attr, coll)
+            # Keep client alive so it isn't GC'd
+            if not hasattr(cache, "_clients"):
+                cache._clients = []
+            cache._clients.append(client)
+        return getattr(cache, attr)
+
+    def _get_collections_and_modalities(self):
+        """Ensure CLAP modality is registered when audio is enabled."""
         if config.audio.clap_enabled:
-            self._modalities.append(
-                (model_manager.clap.get_text_embeddings, self.audio_collection, "clap")
-            )
+            has_clap = any(m[1] == "ambient_audio" for m in self._modalities)
+            if not has_clap:
+                self._modalities.append(
+                    (model_manager.clap.get_text_embeddings, "ambient_audio", "clap")
+                )
+
+    def _get_graph_service(self):
+        """Return a GraphService using this thread's collection."""
+        self._get_collections_and_modalities()
+        return GraphService(self.image_collection)
 
     # Public API
 
@@ -103,11 +142,17 @@ class SearchService:
         logger.info(
             "Unified Semantic Search: %s (top_k=%d, type=%s)", query, top_k, media_type
         )
-        query_k = top_k * 10
+        query_k = top_k * 5
         is_lyrics = self._is_lyrics_query(query)
 
+        self._get_collections_and_modalities()
         combined_items = []
-        for embedding_fn, collection, modality in self._modalities:
+        for embedding_fn, collection_name, modality in self._modalities:
+            collection = (
+                self.image_collection if collection_name == "images"
+                else self.text_collection if collection_name == "texts"
+                else self.audio_collection
+            )
             results = self._query_collection(embedding_fn, collection, query, query_k)
             if not results["ids"] or not results["ids"][0]:
                 continue
@@ -154,11 +199,19 @@ class SearchService:
 
         Returns:
             List of result dicts ordered by descending similarity.
+
+        Raises:
+            ValueError: If the image path does not exist or is inaccessible.
         """
         query_media, query_input = self._resolve_query_media(image_path)
+
+        if isinstance(query_input, str):
+            if not os.path.exists(query_input):
+                raise ValueError("Image file not found: %s" % query_input)
+
         embedding = model_manager.clip.get_image_embeddings([query_input])[0]
 
-        query_k = top_k * 10
+        query_k = top_k * 5
         results = self.image_collection.query(
             query_embeddings=[embedding],
             n_results=query_k,
@@ -264,11 +317,11 @@ class SearchService:
 
     def generate_graph_data(self) -> Dict[str, Any]:
         """Delegate to :class:`GraphService`."""
-        return self.graph_service.generate()
+        return self._get_graph_service().generate()
 
     def generate_subgraph_data(self, ids: List[str]) -> Dict[str, Any]:
         """Delegate filtered subgraph to :class:`GraphService`."""
-        return self.graph_service.generate_for_ids(ids)
+        return self._get_graph_service().generate_for_ids(ids)
 
     # Internal helpers
 
