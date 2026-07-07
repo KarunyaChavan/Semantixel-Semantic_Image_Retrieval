@@ -219,7 +219,7 @@
             const threshold = parseFloat(document.getElementById('threshold').value);
             const topK = parseInt(document.getElementById('top-k').value);
             const mediaType = document.getElementById('media-type').value;
-            const port = window.location.port || 8080;  // Default to 8080 if no port is specified
+            const port = window.location.port || 23107;
             const url = `http://${window.location.hostname}:${port}/${route}`;
             const loader = document.getElementById('loader');
             const resultsDiv = document.getElementById('results');
@@ -775,12 +775,14 @@
                 initGraph(null);
                 // Automatically fetch and load graph data the first time
                 loadGraphData();
+                // Show the refresh button once the graph view is active
+                document.getElementById('btn-load-graph').style.display = 'inline-flex';
             }
         }
 
         function initGraph(graphData) {
             const elem = document.getElementById('graph-container');
-            const port = window.location.port || 8080;
+            const port = window.location.port || 23107;
 
             if (!semanticGraph) {
                 semanticGraph = ForceGraph()(elem)
@@ -794,7 +796,12 @@
                     .onNodeClick(node => {
                         const src = `http://${window.location.hostname}:${port}/images/${encodeURIComponent(node.media_id || node.path)}`;
                         if (node.type === 'video') {
-                            displayEnlargedVideo(src + `#t=${node.timestamp}`);
+                            // Create a temporary video element to feed displayEnlargedVideo
+                            const tmpVideo = document.createElement('video');
+                            tmpVideo.src = src + `#t=${node.timestamp || 0}`;
+                            tmpVideo.currentTime = node.timestamp || 0;
+                            tmpVideo.muted = false;
+                            displayEnlargedVideo(tmpVideo);
                         } else {
                             displayEnlargedImage(src);
                         }
@@ -829,7 +836,7 @@
         function loadGraphData() {
             const btn = document.getElementById('btn-load-graph');
             const loader = document.getElementById('graph-loader');
-            const port = window.location.port || 8080;
+            const port = window.location.port || 23107;
             const url = `http://${window.location.hostname}:${port}/graph_data`;
 
             btn.disabled = true;
@@ -841,9 +848,6 @@
                     initGraph(data);
                     btn.disabled = false;
                     loader.style.display = 'none';
-
-                    // Hide the reset button since we are back to default view
-                    btn.style.display = 'none';
                 })
                 .catch(e => {
                     console.error("Graph fetch failed:", e);

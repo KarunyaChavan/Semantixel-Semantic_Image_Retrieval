@@ -1,55 +1,64 @@
-#Ignore database files
-db/
-
-#Ignore model checkpoints
-checkpoint/
-
-#Ignore vscode settings
-.vscode/
-
-#Ignore file paths
-Index/paths.csv
-
-#Ignoring VS Code workspace files
-.vscode/
-
-# Ignoring virtual environment
+# --- Dependencies & Environments ---
 semantixel_venv/
 venv/
 .venv/
 
-#Ignoring Jupyter Lab files
+# --- Database & Model Checkpoints ---
+db/
+checkpoint/
+
+# --- Editor & IDE ---
+.vscode/
+
+# --- Jupyter ---
 .ipynb_checkpoints/
 
-# Face Recognition Data - keep directories but ignore contents
+# --- Python build artifacts ---
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# --- Config & Secrets ---
+config.yaml
+google_drive_token.json
+client_secret_*.json
+*google*token*.json
+.env
+
+# --- Logs ---
+logs/
+
+# --- Face data ---
 face_db/*
 !face_db/.gitkeep
 face_data/*
 !face_data/.gitkeep
 
-# Ignoring pycache dirs
-__pycache__/
-*.pyc
-*.pyo
+# --- Index artifacts ---
+Index/paths.csv
 
-#Package build artifacts
-*.egg-info/
-
-#Ignoring config files
-config.yaml
-google_drive_token.json
-client_secret_*.json
-*google*token*.json
-
-#Knowledge Base
+# --- Knowledge graph ---
 graphify-out/
 .agent/
 
-#Logs
-*.log
-
-#Generated gRPC stubs (regenerate via python scripts/generate_proto.py)
+# --- Generated gRPC stubs (regenerate via proto/) ---
 semantixel/*_pb2*.py
+cmd/scanner/semantixelpb/*.pb.go
+
+# --- Go build artifacts ---
+cmd/scanner/scanner.exe
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# --- Temp / test files ---
+.test_*.py
+run_scanner_test.py
+run_go_test.py
 
 #Scanner executable
 scanner.exe

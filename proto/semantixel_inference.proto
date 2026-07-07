@@ -7,6 +7,8 @@ syntax = "proto3";
 
 package semantixel.inference;
 
+option go_package = "semantixel-scanner/semantixelpb";
+
 // SemantixelInferenceService exposes ML inference endpoints
 // that were previously only available through the Flask REST API.
 // This service is consumed by the Go scanner and the
@@ -24,8 +26,27 @@ service SemantixelInference {
   // OCR-extracted text for each image.
   rpc ExtractOCR(ExtractOCRRequest) returns (ExtractOCRResponse);
 
+  // TextEmbedMiniLM accepts one or more text strings and returns
+  // embeddings from the configured text embed provider (MiniLM by default).
+  // Used by the Go scanner to embed OCR text for the text_collection.
+  rpc TextEmbedMiniLM(TextEmbedMiniLMRequest) returns (TextEmbedMiniLMResponse);
+
   // HealthCheck returns the server status and loaded model info.
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+
+  // --- Indexing RPCs for Go Scanner ---
+
+  // CheckExists returns whether the given media paths are already indexed.
+  rpc CheckExists(CheckExistsRequest) returns (CheckExistsResponse);
+
+  // IndexImages accepts raw image bytes and indexes them into ChromaDB.
+  rpc IndexImages(IndexImagesRequest) returns (IndexResponse);
+
+  // IndexVideo tells the server to extract frames from a video path and index them.
+  rpc IndexVideo(IndexVideoRequest) returns (IndexResponse);
+
+  // IndexAudio tells the server to transcribe/embed an audio file from its path.
+  rpc IndexAudio(IndexAudioRequest) returns (IndexResponse);
 }
 
 // --- ServingStatus ---
@@ -99,6 +120,25 @@ message ExtractOCRResponse {
   repeated OCRResult results = 1;
 }
 
+// --- TextEmbedMiniLM ---
+
+message TextEmbedMiniLMRequest {
+  // Text strings to embed. Multiple texts are batched for efficiency.
+  repeated string texts = 1;
+}
+
+message TextEmbedMiniLMResponse {
+  // One embedding vector per input text, preserving input order.
+  // Each vector is L2-normalized to unit length.
+  repeated Embedding embeddings = 1;
+
+  // Name of the text embed model checkpoint (e.g. "sentence-transformers/all-MiniLM-L6-v2").
+  string model_name = 2;
+
+  // Dimensionality of each embedding vector.
+  int32 embedding_dim = 3;
+}
+
 // --- HealthCheck ---
 
 message HealthCheckRequest {}
@@ -121,6 +161,12 @@ message HealthCheckResponse {
 
   // Name of the active OCR model architecture.
   string ocr_model_name = 6;
+
+  // Whether the text embed model is loaded.
+  bool text_embed_loaded = 7;
+
+  // Name of the active text embed model checkpoint.
+  string text_embed_model_name = 8;
 }
 
 // --- Shared Types ---
@@ -129,3 +175,41 @@ message Embedding {
   // Flat float32 embedding vector.
   repeated float values = 1;
 }
+
+// --- Indexing ---
+
+message IndexMediaMetadata {
+  string source = 1;
+  string locator = 2;
+  string display_path = 3;
+}
+
+message CheckExistsRequest {
+  repeated IndexMediaMetadata media = 1;
+}
+
+message CheckExistsResponse {
+  // True if the corresponding item is already fully indexed.
+  repeated bool exists = 1;
+}
+
+message IndexImagesRequest {
+  // Raw image bytes.
+  repeated bytes images = 1;
+  // One metadata entry per image.
+  repeated IndexMediaMetadata metadata = 2;
+}
+
+message IndexResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message IndexVideoRequest {
+  IndexMediaMetadata metadata = 1;
+}
+
+message IndexAudioRequest {
+  IndexMediaMetadata metadata = 1;
+}
+

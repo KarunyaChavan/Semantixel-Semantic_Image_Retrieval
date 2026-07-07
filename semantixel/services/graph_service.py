@@ -14,10 +14,15 @@ class GraphService:
 
     Each node represents an indexed media item.  Edges connect the top-3
     nearest neighbours (cosine similarity > 0.5).
+
+    To keep rendering fast and avoid OOM, the graph is limited to
+    ``MAX_NODES`` (500).  If the collection has more items, the most
+    recently indexed 500 are used.
     """
 
     TOP_K_NEIGHBORS = 3
     MIN_SIMILARITY = 0.5
+    MAX_NODES = 500
 
     def __init__(self, image_collection):
         self.image_collection = image_collection
@@ -37,7 +42,15 @@ class GraphService:
         if not ids:
             return {"nodes": [], "links": []}
 
-        nodes = self._build_nodes(ids, data.get("metadatas") or [])
+        # Limit total nodes to keep the graph renderable
+        if len(ids) > self.MAX_NODES:
+            ids = ids[:self.MAX_NODES]
+            embeddings = embeddings[:self.MAX_NODES]
+            metadatas = (data.get("metadatas") or [])[:self.MAX_NODES]
+        else:
+            metadatas = data.get("metadatas") or []
+
+        nodes = self._build_nodes(ids, metadatas)
         links = self._build_links(ids, embeddings)
 
         logger.info(

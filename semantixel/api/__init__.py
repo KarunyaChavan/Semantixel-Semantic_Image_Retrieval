@@ -14,12 +14,23 @@ from semantixel.services.face_service import FaceService
 from semantixel.services.model_manager import model_manager
 
 
-def create_app() -> Flask:
+def create_app(index_service=None, face_service=None, search_service=None) -> Flask:
     """Create and return a configured Flask application instance.
 
     Initialises all services (index, face, search) and attaches them to
     the app context so that route handlers can access them via
     ``current_app.<service>``.
+
+    When *index_service*, *face_service*, or *search_service* are
+    omitted, new instances are created and Google Drive indexing is
+    started in a background daemon thread (standalone mode).  When
+    provided, the caller (e.g. :class:`UnifiedServer`) assumes
+    responsibility for Drive indexing.
+
+    Args:
+        index_service: Pre-built IndexService (shared with gRPC).
+        face_service:  Pre-built FaceService.
+        search_service: Pre-built SearchService.
 
     Returns:
         A ready-to-run :class:`Flask` application.
@@ -27,19 +38,54 @@ def create_app() -> Flask:
     app = Flask(__name__, static_folder="../../UI/Semantixel WebUI")
     CORS(app)
 
-    index_service = IndexService()
-    face_service = FaceService()
-    search_service = SearchService(index_service, face_service)
+    standalone = index_service is None
+    if standalone:
+        index_service = IndexService()
+        face_service = FaceService()
+        search_service = SearchService(index_service, face_service)
 
     app.index_service = index_service
     app.face_service = face_service
     app.search_service = search_service
     app.google_drive_source = index_service.google_drive_source
 
-    try:
-        model_manager.clip.load()
-    except Exception as exc:
-        logger.warning("CLIP warmup skipped: %s", exc)
+    # Warm up all models eagerly so the first search request is fast
+    for name, loader in [
+        ("CLIP", model_manager.clip),
+        ("text_embed", model_manager.text_embed),
+    ]:
+        try:
+            loader.load()
+        except Exception as exc:
+            logger.warning("%s warmup skipped: %s", name, exc)
+
+    if config.audio.clap_enabled:
+        try:
+            model_manager.clap.load()
+        except Exception as exc:
+            logger.warning("CLAP warmup skipped: %s", exc)
+
+    # Index Google Drive items — the Go scanner only handles local files.
+    # In standalone mode (no shared services), runs in a daemon thread
+    # so it never blocks server startup.
+    if standalone:
+        gdrive = index_service.google_drive_source
+        if gdrive.is_enabled():
+            import threading
+            def _index_drive():
+                try:
+                    items = gdrive.list_media()
+                    if items:
+                        index_service.image_indexer.index_images(
+                            items, google_drive_source=gdrive
+                        )
+                        index_service.bm25_service.rebuild_from_collection(
+                            index_service.text_collection
+                        )
+                except Exception as exc:
+                    logger.warning("Google Drive indexing skipped: %s", exc)
+            t = threading.Thread(target=_index_drive, daemon=True)
+            t.start()
 
     from semantixel.api.routes import main_bp
 
