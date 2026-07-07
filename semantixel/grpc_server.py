@@ -27,35 +27,41 @@ class InferenceServicer(semantixel_inference_pb2_grpc.SemantixelInferenceService
     (Flask REST or gRPC).
     """
 
-    def __init__(self) -> None:
-        """Initialise servicer with shared model providers."""
+    def __init__(self, index_service=None) -> None:
+        """Initialise servicer with shared model providers.
+
+        Args:
+            index_service: Optional shared IndexService. When ``None``
+                (standalone mode) a new instance is created and Google
+                Drive indexing is started in a background thread.
+        """
         self._clip = model_manager.clip
         self._ocr = model_manager.ocr
         self._text_embed = model_manager.text_embed
 
-        # Initialise IndexService (creates ChromaDB PersistentClient)
-        # We do this here so it shares the single DB lock when gRPC serves.
-        from semantixel.services.index_service import IndexService
-        self._index_service = IndexService()
+        if index_service is None:
+            from semantixel.services.index_service import IndexService
+            index_service = IndexService()
+            # Standalone mode — index Drive in background
+            gdrive = index_service.google_drive_source
+            if gdrive.is_enabled():
+                import threading
+                def _index_drive():
+                    try:
+                        items = gdrive.list_media()
+                        if items:
+                            index_service.image_indexer.index_images(
+                                items, google_drive_source=gdrive
+                            )
+                            index_service.bm25_service.rebuild_from_collection(
+                                index_service.text_collection
+                            )
+                    except Exception as exc:
+                        logger.warning("Google Drive indexing skipped: %s", exc)
+                t = threading.Thread(target=_index_drive, daemon=True)
+                t.start()
 
-        # Index Google Drive items in background — Go scanner skips these
-        gdrive = self._index_service.google_drive_source
-        if gdrive.is_enabled():
-            import threading
-            def _index_drive():
-                try:
-                    items = gdrive.list_media()
-                    if items:
-                        self._index_service.image_indexer.index_images(
-                            items, google_drive_source=gdrive
-                        )
-                        self._index_service.bm25_service.rebuild_from_collection(
-                            self._index_service.text_collection
-                        )
-                except Exception as exc:
-                    logger.warning("Google Drive indexing skipped: %s", exc)
-            t = threading.Thread(target=_index_drive, daemon=True)
-            t.start()
+        self._index_service = index_service
 
     def _decode_images(
         self,
@@ -422,11 +428,13 @@ class GrpcInferenceServer:
         host: str = "0.0.0.0",
         port: int = 50051,
         max_workers: int = 10,
+        index_service=None,
     ) -> None:
         """Initialise server with host, port, and thread pool size."""
         self.host = host
         self.port = port
         self.max_workers = max_workers
+        self._index_service = index_service
         self._server: Optional[grpc.aio.Server] = None
 
     @property
@@ -455,7 +463,7 @@ class GrpcInferenceServer:
         )
 
         semantixel_inference_pb2_grpc.add_SemantixelInferenceServicer_to_server(
-            InferenceServicer(),
+            InferenceServicer(index_service=self._index_service),
             self._server,
         )
 
@@ -488,6 +496,7 @@ def create_grpc_server(
     host: str = "0.0.0.0",
     port: int = 50051,
     max_workers: int = 10,
+    index_service=None,
 ) -> GrpcInferenceServer:
     """Factory function for GrpcInferenceServer.
 
@@ -497,6 +506,7 @@ def create_grpc_server(
         host=host,
         port=port,
         max_workers=max_workers,
+        index_service=index_service,
     )
 
 
